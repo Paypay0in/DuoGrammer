@@ -98,6 +98,15 @@ export default function App() {
   const [isGrading, setIsGrading] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
   const [isWorksheetExpanded, setIsWorksheetExpanded] = useState(true);
+  const [summaryHistory, setSummaryHistory] = useState<GlobalSummaryData[]>(() => {
+    const saved = localStorage.getItem('duo_summary_history_v1');
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return [];
+    }
+  });
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
   const [worksheetAnswers, setWorksheetAnswers] = useState<string[]>([]);
@@ -146,6 +155,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('duo_worksheet_history', JSON.stringify(worksheetHistory));
   }, [worksheetHistory]);
+
+  useEffect(() => {
+    localStorage.setItem('duo_summary_history_v1', JSON.stringify(summaryHistory));
+  }, [summaryHistory]);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -317,12 +330,15 @@ export default function App() {
         throw new Error("AI 回傳格式不正確，無法生成總結。");
       }
 
-      setGlobalSummary({
+      const newSummary: GlobalSummaryData = {
         content: data.content,
         timestamp: Date.now(),
         worksheet: data.worksheet,
         flashcards: data.flashcards
-      });
+      };
+
+      setGlobalSummary(newSummary);
+      setSummaryHistory(prev => [newSummary, ...prev]);
       setWorksheetAnswers(new Array(data.worksheet.length).fill(''));
       setCurrentFlashcardIndex(0);
       setIsCardFlipped(false);
@@ -395,6 +411,8 @@ export default function App() {
       };
       
       setGlobalSummary(updatedSummary);
+      setSummaryHistory(prev => prev.map(s => s.timestamp === globalSummary.timestamp ? updatedSummary : s));
+      
       setWorksheetHistory(prev => [{
         timestamp: Date.now(),
         score: data.score,
@@ -1195,6 +1213,30 @@ export default function App() {
                       <RefreshCw className={cn("w-4 h-4", isGeneratingSummary && "animate-spin")} />
                       重新整理
                     </button>
+                    {summaryHistory.length > 0 && (
+                      <div className="flex items-center gap-2 bg-duo-light p-1.5 rounded-xl border border-duo-border">
+                        <History className="w-3.5 h-3.5 text-duo-gray ml-1" />
+                        <select 
+                          className="bg-transparent text-xs font-bold text-duo-dark focus:outline-none pr-2 py-0.5 cursor-pointer"
+                          value={globalSummary?.timestamp || ''}
+                          onChange={(e) => {
+                            const selected = summaryHistory.find(s => s.timestamp === Number(e.target.value));
+                            if (selected) {
+                              setGlobalSummary(selected);
+                              setWorksheetAnswers(selected.userAnswers || new Array(selected.worksheet.length).fill(''));
+                              setCurrentFlashcardIndex(0);
+                              setIsCardFlipped(false);
+                            }
+                          }}
+                        >
+                          {summaryHistory.map(s => (
+                            <option key={s.timestamp} value={s.timestamp}>
+                              歷史總結：{new Date(s.timestamp).toLocaleDateString()} {new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-12">
                     {globalSummary && globalSummary.content ? (
