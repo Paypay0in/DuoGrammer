@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Type } from "@google/genai";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -26,6 +27,22 @@ interface AnalysisResult {
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
+}
+
+interface WorksheetQuestion {
+  question: string;
+  type: 'multiple-choice' | 'fill-in-the-blank' | 'translation';
+  options?: string[];
+  correctAnswer: string;
+}
+
+interface GlobalSummaryData {
+  content: string;
+  timestamp: number;
+  worksheet: WorksheetQuestion[];
+  userAnswers?: string[];
+  feedback?: string;
+  score?: number;
 }
 
 // Extend Window interface for SpeechRecognition
@@ -53,10 +70,17 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [isAutoSpeak, setIsAutoSpeak] = useState(true);
   const [isSlowMode, setIsSlowMode] = useState(false);
-  const [globalSummary, setGlobalSummary] = useState<string | null>(() => {
-    return localStorage.getItem('duo_grammar_summary');
+  const [globalSummary, setGlobalSummary] = useState<GlobalSummaryData | null>(() => {
+    const saved = localStorage.getItem('duo_grammar_summary_v2');
+    return saved ? JSON.parse(saved) : null;
   });
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [isGrading, setIsGrading] = useState(false);
+  const [worksheetAnswers, setWorksheetAnswers] = useState<string[]>([]);
+  const [worksheetHistory, setWorksheetHistory] = useState<any[]>(() => {
+    const saved = localStorage.getItem('duo_worksheet_history');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [unitChatMessages, setUnitChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
     const saved = localStorage.getItem('duo_grammar_unit_chats');
     return saved ? JSON.parse(saved) : {};
@@ -79,11 +103,15 @@ export default function App() {
 
   useEffect(() => {
     if (globalSummary) {
-      localStorage.setItem('duo_grammar_summary', globalSummary);
+      localStorage.setItem('duo_grammar_summary_v2', JSON.stringify(globalSummary));
     } else {
-      localStorage.removeItem('duo_grammar_summary');
+      localStorage.removeItem('duo_grammar_summary_v2');
     }
   }, [globalSummary]);
+
+  useEffect(() => {
+    localStorage.setItem('duo_worksheet_history', JSON.stringify(worksheetHistory));
+  }, [worksheetHistory]);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -160,6 +188,7 @@ export default function App() {
   const generateGlobalSummary = async () => {
     if (history.length === 0) return;
     setGlobalSummary(null);
+    setWorksheetAnswers([]);
     setIsGeneratingSummary(true);
     setActiveTab('summary');
 
@@ -171,29 +200,141 @@ export default function App() {
         `Unit ${i + 1}: ${item.title}\nText: ${item.lessonText}\nGrammar: ${item.grammar}\nVocab: ${item.vocabulary.join(', ')}`
       ).join('\n\n---\n\n');
 
+      const historyContext = worksheetHistory.length > 0 
+        ? `學生之前的學習單表現：\n${worksheetHistory.map(h => `- 分數: ${h.score}/100, 反饋: ${h.feedback}`).join('\n')}\n請特別針對學生之前答錯或不熟悉的觀念進行加強。`
+        : "";
+
       const prompt = `
-        你是一個專業的法文老師。學生目前已經學習了多個碎片化的 Duolingo 單元。
-        請幫學生將以下所有單元的語法知識進行「系統化統整」：
-        1. 建立一個綜合語法表格（例如：人稱代名詞表、動詞變位表等），將不同單元學到的知識點合併在一起。
-        2. 總結核心句型結構。
-        3. 整理出一份系統化的複習筆記。
-        請使用繁體中文，並使用 Markdown 格式（包含表格）讓排版清晰美觀。
+        你是一個頂尖的法文教學專家。學生目前已經學習了多個 Duolingo 單元。
+        請幫學生將以下所有單元的知識進行「系統化統整」，並出一份「複習學習單」。
         
+        ${historyContext}
+
         學習內容如下：
         ${allData}
+
+        請回傳 JSON 格式，包含以下欄位：
+        1. "content": 系統化複習筆記（Markdown 格式，包含表格、重點總結、易錯點提醒）。
+        2. "worksheet": 包含 5 題練習題的陣列。每題包含 "question" (題目), "type" (multiple-choice, fill-in-the-blank, translation), "options" (如果是選擇題), "correctAnswer" (正確答案)。
+        
+        注意：
+        - 筆記要包含當天日期與產出時間。
+        - 學習單題目要涵蓋所有單元的重點。
+        - 務必回傳純 JSON。
       `;
 
       const response = await ai.models.generateContent({
         model,
         contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              content: { type: Type.STRING },
+              worksheet: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    question: { type: Type.STRING },
+                    type: { type: Type.STRING },
+                    options: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    correctAnswer: { type: Type.STRING }
+                  },
+                  required: ["question", "type", "correctAnswer"]
+                }
+              }
+            },
+            required: ["content", "worksheet"]
+          }
+        }
       });
 
-      setGlobalSummary(response.text || "無法生成總結。");
+      const data = JSON.parse(response.text || "{}");
+      setGlobalSummary({
+        content: data.content,
+        timestamp: Date.now(),
+        worksheet: data.worksheet
+      });
+      setWorksheetAnswers(new Array(data.worksheet.length).fill(''));
     } catch (error) {
       console.error("Summary generation failed:", error);
-      setGlobalSummary("生成總結時發生錯誤。");
+      alert("生成總結時發生錯誤，請稍後再試。");
     } finally {
       setIsGeneratingSummary(false);
+    }
+  };
+
+  const gradeWorksheet = async () => {
+    if (!globalSummary || worksheetAnswers.some(a => !a.trim())) {
+      alert("請完成所有題目後再送出。");
+      return;
+    }
+
+    setIsGrading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const model = "gemini-3-flash-preview";
+
+      const prompt = `
+        你是一個法文老師。請批改學生的學習單。
+        
+        題目與正確答案：
+        ${globalSummary.worksheet.map((q, i) => `${i+1}. ${q.question}\n正確答案: ${q.correctAnswer}`).join('\n')}
+        
+        學生的回答：
+        ${worksheetAnswers.map((a, i) => `${i+1}. ${a}`).join('\n')}
+        
+        請給出：
+        1. 總分 (0-100)。
+        2. 每題的詳細批改建議與解析。
+        3. 整體的學習建議。
+        
+        請回傳 JSON 格式：
+        {
+          "score": 80,
+          "feedback": "Markdown 格式的詳細批改與建議"
+        }
+      `;
+
+      const response = await ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              score: { type: Type.NUMBER },
+              feedback: { type: Type.STRING }
+            },
+            required: ["score", "feedback"]
+          }
+        }
+      });
+
+      const data = JSON.parse(response.text || "{}");
+      
+      const updatedSummary = {
+        ...globalSummary,
+        userAnswers: worksheetAnswers,
+        feedback: data.feedback,
+        score: data.score
+      };
+      
+      setGlobalSummary(updatedSummary);
+      setWorksheetHistory(prev => [{
+        timestamp: Date.now(),
+        score: data.score,
+        feedback: data.feedback
+      }, ...prev].slice(0, 10)); // Keep last 10
+      
+    } catch (error) {
+      console.error("Grading failed:", error);
+      alert("批改失敗，請稍後再試。");
+    } finally {
+      setIsGrading(false);
     }
   };
 
@@ -936,35 +1077,191 @@ export default function App() {
                       <div className="w-12 h-12 bg-duo-yellow rounded-2xl flex items-center justify-center shadow-lg shadow-duo-yellow/20">
                         <Sparkles className="text-white w-7 h-7" />
                       </div>
-                      <h2 className="text-3xl font-extrabold text-duo-dark font-display">語法知識庫統整</h2>
+                      <div>
+                        <h2 className="text-3xl font-extrabold text-duo-dark font-display">語法知識庫統整</h2>
+                        {globalSummary && (
+                          <p className="text-xs font-bold text-duo-gray mt-1 uppercase tracking-wider">
+                            產出時間：{new Date(globalSummary.timestamp).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <button 
                       onClick={generateGlobalSummary}
-                      className="text-sm font-bold text-duo-blue hover:text-duo-blue/80 transition-colors bg-duo-blue/5 px-4 py-2 rounded-xl"
+                      disabled={isGeneratingSummary}
+                      className="text-sm font-bold text-duo-blue hover:text-duo-blue/80 transition-colors bg-duo-blue/5 px-4 py-2 rounded-xl flex items-center gap-2"
                     >
+                      <RefreshCw className={cn("w-4 h-4", isGeneratingSummary && "animate-spin")} />
                       重新整理
                     </button>
                   </div>
-                  <div className="markdown-body prose prose-slate max-w-none prose-table:table-auto">
+                  <div className="space-y-12">
                     {globalSummary ? (
-                      <Markdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          table: ({node, ...props}) => (
-                            <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white">
-                              <table className="w-full border-collapse min-w-[600px]" {...props} />
+                      <>
+                        <div className="markdown-body prose prose-slate max-w-none prose-table:table-auto">
+                          <Markdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              table: ({node, ...props}) => (
+                                <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white">
+                                  <table className="w-full border-collapse min-w-[600px]" {...props} />
+                                </div>
+                              ),
+                              th: ({node, ...props}) => (
+                                <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                              ),
+                              td: ({node, ...props}) => (
+                                <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                              )
+                            }}
+                          >
+                            {globalSummary.content}
+                          </Markdown>
+                        </div>
+
+                        {/* Worksheet Section */}
+                        <div className="mt-16 pt-12 border-t-4 border-duo-border/30">
+                          <div className="flex items-center justify-between mb-10">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-duo-blue rounded-2xl flex items-center justify-center shadow-lg shadow-duo-blue/20">
+                                <ClipboardCheck className="text-white w-7 h-7" />
+                              </div>
+                              <div>
+                                <h3 className="text-2xl font-extrabold text-duo-dark font-display">今日複習學習單</h3>
+                                <p className="text-sm font-bold text-duo-gray">根據你學過的內容自動生成的練習題</p>
+                              </div>
                             </div>
-                          ),
-                          th: ({node, ...props}) => (
-                            <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
-                          ),
-                          td: ({node, ...props}) => (
-                            <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
-                          )
-                        }}
-                      >
-                        {globalSummary}
-                      </Markdown>
+                            {globalSummary.score !== undefined && (
+                              <div className="flex items-center gap-3 bg-duo-green/10 px-6 py-3 rounded-2xl border-2 border-duo-green/20">
+                                <CheckCircle2 className="w-6 h-6 text-duo-green" />
+                                <span className="text-2xl font-black text-duo-green">{globalSummary.score} / 100</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-8">
+                            {globalSummary.worksheet.map((q, idx) => (
+                              <div key={idx} className="bg-white rounded-3xl p-8 border-2 border-duo-border shadow-sm">
+                                <div className="flex items-start gap-4 mb-6">
+                                  <span className="w-10 h-10 bg-duo-light rounded-xl flex items-center justify-center font-black text-duo-gray flex-shrink-0">
+                                    {idx + 1}
+                                  </span>
+                                  <p className="text-xl font-bold text-duo-dark pt-1">{q.question}</p>
+                                </div>
+
+                                {q.type === 'multiple-choice' ? (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 ml-14">
+                                    {q.options?.map((opt, optIdx) => (
+                                      <button
+                                        key={optIdx}
+                                        disabled={globalSummary.score !== undefined}
+                                        onClick={() => {
+                                          const newAnswers = [...worksheetAnswers];
+                                          newAnswers[idx] = opt;
+                                          setWorksheetAnswers(newAnswers);
+                                        }}
+                                        className={cn(
+                                          "p-4 rounded-2xl border-2 font-bold text-left transition-all",
+                                          worksheetAnswers[idx] === opt
+                                            ? "bg-duo-blue border-duo-blue text-white shadow-lg shadow-duo-blue/20"
+                                            : "bg-white border-duo-border text-duo-dark hover:border-duo-blue/40",
+                                          globalSummary.score !== undefined && q.correctAnswer === opt && "border-duo-green bg-duo-green/10 text-duo-green",
+                                          globalSummary.score !== undefined && worksheetAnswers[idx] === opt && q.correctAnswer !== opt && "border-duo-red bg-duo-red/10 text-duo-red"
+                                        )}
+                                      >
+                                        {opt}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="ml-14">
+                                    <input
+                                      type="text"
+                                      disabled={globalSummary.score !== undefined}
+                                      value={worksheetAnswers[idx] || ''}
+                                      onChange={(e) => {
+                                        const newAnswers = [...worksheetAnswers];
+                                        newAnswers[idx] = e.target.value;
+                                        setWorksheetAnswers(newAnswers);
+                                      }}
+                                      placeholder="請輸入答案..."
+                                      className={cn(
+                                        "w-full bg-duo-light border-2 border-duo-border rounded-2xl px-6 py-4 font-bold focus:outline-none focus:border-duo-blue transition-all",
+                                        globalSummary.score !== undefined && worksheetAnswers[idx].toLowerCase().trim() === q.correctAnswer.toLowerCase().trim() && "border-duo-green bg-duo-green/5",
+                                        globalSummary.score !== undefined && worksheetAnswers[idx].toLowerCase().trim() !== q.correctAnswer.toLowerCase().trim() && "border-duo-red bg-duo-red/5"
+                                      )}
+                                    />
+                                    {globalSummary.score !== undefined && worksheetAnswers[idx].toLowerCase().trim() !== q.correctAnswer.toLowerCase().trim() && (
+                                      <p className="mt-3 text-sm font-bold text-duo-green flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        正確答案：{q.correctAnswer}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {globalSummary.score === undefined ? (
+                            <div className="mt-12 flex justify-center">
+                              <button
+                                onClick={gradeWorksheet}
+                                disabled={isGrading || worksheetAnswers.some(a => !a.trim())}
+                                className="duo-button-green px-12 py-5 text-xl flex items-center gap-3 shadow-xl shadow-duo-green/20"
+                              >
+                                {isGrading ? (
+                                  <>
+                                    <Loader2 className="w-6 h-6 animate-spin" />
+                                    老師批改中...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="w-6 h-6" />
+                                    送出學習單
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          ) : (
+                            <motion.div
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="mt-16 bg-white rounded-[40px] p-10 border-4 border-duo-green/30 shadow-2xl shadow-duo-green/5 relative overflow-hidden"
+                            >
+                              <div className="absolute top-0 right-0 p-8 opacity-10">
+                                <CheckCircle2 className="w-32 h-32 text-duo-green" />
+                              </div>
+                              <div className="relative z-10">
+                                <div className="flex items-center gap-4 mb-8">
+                                  <div className="w-14 h-14 bg-duo-green rounded-2xl flex items-center justify-center">
+                                    <Sparkles className="text-white w-8 h-8" />
+                                  </div>
+                                  <h4 className="text-3xl font-extrabold text-duo-dark font-display">老師的批改與建議</h4>
+                                </div>
+                                <div className="markdown-body prose prose-slate max-w-none">
+                                  <Markdown remarkPlugins={[remarkGfm]}>
+                                    {globalSummary.feedback}
+                                  </Markdown>
+                                </div>
+                                <div className="mt-10 pt-8 border-t-2 border-duo-border/50 flex flex-col sm:flex-row items-center justify-between gap-6">
+                                  <div className="flex items-center gap-3 text-duo-gray">
+                                    <AlertCircle className="w-5 h-5" />
+                                    <p className="text-sm font-bold">下次統整時，我會特別加強你這次答錯的部分。</p>
+                                  </div>
+                                  <button
+                                    onClick={generateGlobalSummary}
+                                    className="text-duo-blue font-black uppercase tracking-widest text-xs hover:underline flex items-center gap-2"
+                                  >
+                                    <RefreshCw className="w-4 h-4" />
+                                    產出新的複習內容
+                                  </button>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </div>
+                      </>
                     ) : (
                       <div className="text-center py-32 text-duo-gray">
                         <div className="w-20 h-20 bg-duo-light rounded-full flex items-center justify-center mx-auto mb-6">
