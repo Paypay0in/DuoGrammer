@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -88,6 +88,7 @@ export default function App() {
   });
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
   const [worksheetAnswers, setWorksheetAnswers] = useState<string[]>([]);
   const [worksheetHistory, setWorksheetHistory] = useState<any[]>(() => {
     const saved = localStorage.getItem('duo_worksheet_history');
@@ -1135,25 +1136,50 @@ export default function App() {
                   <div className="space-y-12">
                     {globalSummary && globalSummary.content ? (
                       <>
-                        <div className="markdown-body">
-                          <Markdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              table: (props) => (
-                                <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
-                                  <table className="w-full border-collapse min-w-[600px]" {...props} />
-                                </div>
-                              ),
-                              th: (props) => (
-                                <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
-                              ),
-                              td: (props) => (
-                                <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
-                              )
-                            }}
+                        <div className="bg-duo-light/30 rounded-[32px] border-2 border-duo-border overflow-hidden">
+                          <button 
+                            onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
+                            className="w-full px-8 py-6 flex items-center justify-between hover:bg-duo-light/50 transition-colors group"
                           >
-                            {globalSummary.content}
-                          </Markdown>
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-duo-border group-hover:border-duo-blue/30 transition-colors">
+                                <BookOpen className="w-5 h-5 text-duo-blue" />
+                              </div>
+                              <span className="text-xl font-extrabold text-duo-dark font-display">系統化筆記內容</span>
+                            </div>
+                            <div className={cn("transition-transform duration-300", !isSummaryExpanded && "rotate-180")}>
+                              <ChevronUp className="w-6 h-6 text-duo-gray" />
+                            </div>
+                          </button>
+                          
+                          <motion.div 
+                            initial={false}
+                            animate={{ height: isSummaryExpanded ? 'auto' : 0, opacity: isSummaryExpanded ? 1 : 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="p-8 pt-0 border-t-2 border-duo-border/30">
+                              <div className="markdown-body mt-6">
+                                <Markdown
+                                  remarkPlugins={[remarkGfm]}
+                                  components={{
+                                    table: (props) => (
+                                      <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
+                                        <table className="w-full border-collapse min-w-[600px]" {...props} />
+                                      </div>
+                                    ),
+                                    th: (props) => (
+                                      <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                    ),
+                                    td: (props) => (
+                                      <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                    )
+                                  }}
+                                >
+                                  {globalSummary.content}
+                                </Markdown>
+                              </div>
+                            </div>
+                          </motion.div>
                         </div>
 
                         {/* Worksheet Section */}
@@ -1268,50 +1294,61 @@ export default function App() {
                               <motion.div
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="mt-16 bg-white rounded-[40px] p-6 sm:p-10 border-4 border-duo-green/30 shadow-2xl shadow-duo-green/5 relative overflow-hidden"
+                                className="mt-16 bg-white rounded-[40px] border-4 border-duo-green/30 shadow-2xl shadow-duo-green/5 relative overflow-hidden"
                               >
-                                <div className="absolute top-0 right-0 p-8 opacity-10">
-                                  <CheckCircle2 className="w-32 h-32 text-duo-green" />
+                                <div className="absolute top-0 right-0 p-8 opacity-5">
+                                  <CheckCircle2 className="w-48 h-48 text-duo-green" />
                                 </div>
+                                
                                 <div className="relative z-10">
-                                  <div className="flex items-center gap-4 mb-8">
-                                    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-duo-green rounded-2xl flex items-center justify-center">
-                                      <Sparkles className="text-white w-6 h-6 sm:w-8 sm:h-8" />
+                                  <div className="bg-duo-green p-8 flex items-center gap-6">
+                                    <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30">
+                                      <Sparkles className="text-white w-9 h-9" />
                                     </div>
-                                    <h4 className="text-2xl sm:text-3xl font-extrabold text-duo-dark font-display">老師的批改與建議</h4>
-                                  </div>
-                                  <div className="markdown-body">
-                                    <Markdown 
-                                      remarkPlugins={[remarkGfm]}
-                                      components={{
-                                        table: (props) => (
-                                          <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
-                                            <table className="w-full border-collapse min-w-[500px]" {...props} />
-                                          </div>
-                                        ),
-                                        th: (props) => (
-                                          <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
-                                        ),
-                                        td: (props) => (
-                                          <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
-                                        )
-                                      }}
-                                    >
-                                      {globalSummary.feedback || ""}
-                                    </Markdown>
-                                  </div>
-                                  <div className="mt-10 pt-8 border-t-2 border-duo-border/50 flex flex-col sm:flex-row items-center justify-between gap-6">
-                                    <div className="flex items-center gap-3 text-duo-gray">
-                                      <AlertCircle className="w-5 h-5" />
-                                      <p className="text-sm font-bold">下次統整時，我會特別加強你這次答錯的部分。</p>
+                                    <div>
+                                      <h4 className="text-3xl font-black text-white font-display">老師的批改與建議</h4>
+                                      <p className="text-white/80 font-bold text-sm mt-1 uppercase tracking-widest">TCF Canada 備考專屬反饋</p>
                                     </div>
-                                    <button
-                                      onClick={generateGlobalSummary}
-                                      className="text-duo-blue font-black uppercase tracking-widest text-xs hover:underline flex items-center gap-2"
-                                    >
-                                      <RefreshCw className="w-4 h-4" />
-                                      產出新的複習內容
-                                    </button>
+                                  </div>
+                                  
+                                  <div className="p-8 sm:p-12">
+                                    <div className="markdown-body feedback-markdown">
+                                      <Markdown 
+                                        remarkPlugins={[remarkGfm]}
+                                        components={{
+                                          table: (props) => (
+                                            <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
+                                              <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                            </div>
+                                          ),
+                                          th: (props) => (
+                                            <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                          ),
+                                          td: (props) => (
+                                            <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                          ),
+                                          blockquote: (props) => (
+                                            <blockquote className="border-l-8 border-duo-green bg-duo-green/5 p-6 rounded-r-3xl my-8 italic font-medium text-duo-dark" {...props} />
+                                          )
+                                        }}
+                                      >
+                                        {globalSummary.feedback || ""}
+                                      </Markdown>
+                                    </div>
+                                    
+                                    <div className="mt-12 pt-10 border-t-2 border-duo-border/50 flex flex-col sm:flex-row items-center justify-between gap-8">
+                                      <div className="flex items-center gap-4 bg-duo-light px-6 py-4 rounded-2xl border-2 border-duo-border/50">
+                                        <AlertCircle className="w-6 h-6 text-duo-blue" />
+                                        <p className="text-sm font-extrabold text-duo-dark">下次統整時，我會特別加強你這次答錯的部分。</p>
+                                      </div>
+                                      <button
+                                        onClick={generateGlobalSummary}
+                                        className="duo-button-blue px-8 py-4 text-sm flex items-center gap-3"
+                                      >
+                                        <RefreshCw className="w-4 h-4" />
+                                        產出新的複習內容
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               </motion.div>
