@@ -197,7 +197,7 @@ export default function App() {
     }
   };
 
-  const resizeImage = (file: File, maxWidth = 1024, maxHeight = 1024): Promise<string> => {
+  const resizeImage = (file: File, maxWidth = 640, maxHeight = 640): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -223,7 +223,7 @@ export default function App() {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
         };
         img.src = e.target?.result as string;
       };
@@ -309,6 +309,18 @@ export default function App() {
     setAnalysisProgress({ current: 0, total: fileArray.length });
     setActiveTab('study');
 
+    const callWithRetry = async (fn: () => Promise<any>, retries = 3, delay = 2000) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          return await fn();
+        } catch (err) {
+          if (i === retries - 1) throw err;
+          console.warn(`API call failed, retrying (${i + 1}/${retries})...`, err);
+          await new Promise(r => setTimeout(r, delay * (i + 1)));
+        }
+      }
+    };
+
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       const model = "gemini-3-flash-preview";
@@ -319,8 +331,8 @@ export default function App() {
       const base64List: string[] = [];
 
       for (let i = 0; i < fileArray.length; i += CHUNK_SIZE) {
-        // Add a small delay to avoid rate limiting
-        if (i > 0) await new Promise(r => setTimeout(r, 500));
+        // Add a delay to avoid rate limiting
+        if (i > 0) await new Promise(r => setTimeout(r, 2000));
         
         const chunk = fileArray.slice(i, i + CHUNK_SIZE);
         const chunkBase64: string[] = [];
@@ -361,20 +373,19 @@ export default function App() {
           }
         `;
 
-        const response = await ai.models.generateContent({
+        const response = await callWithRetry(() => ai.models.generateContent({
           model,
           contents: { parts: [...imageParts, { text: chunkPrompt }] },
           config: { responseMimeType: "application/json" }
-        });
+        }));
 
         allExtractedResults.push(safeJsonParse(response.text || "{}", {}));
       }
 
       // Final consolidation step
-      setAnalysisProgress({ current: fileArray.length, total: fileArray.length });
+      setAnalysisProgress({ current: fileArray.length, total: fileArray.length + 1 });
       const combinedData = JSON.stringify(allExtractedResults);
-      const existingUnitsInfo = history.map(h => `- ${h.title}`).join('\n');
-
+      
       const consolidationPrompt = `
         你是一個頂尖的法文教學專家。請將以下多組提取到的 Duolingo 截圖內容整合為系統化的學習單元。
         
@@ -400,12 +411,13 @@ export default function App() {
         ]
       `;
 
-      const finalResponse = await ai.models.generateContent({
+      const finalResponse = await callWithRetry(() => ai.models.generateContent({
         model,
         contents: [{ parts: [{ text: consolidationPrompt }] }],
         config: { responseMimeType: "application/json" }
-      });
+      }));
 
+      setAnalysisProgress({ current: fileArray.length + 1, total: fileArray.length + 1 });
       const results = safeJsonParse(finalResponse.text || "[]", []);
       
       setHistory(prev => {
@@ -452,9 +464,10 @@ export default function App() {
         speakText(displayResult.practicePrompt);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Batch analysis failed:", error);
-      alert("分析失敗，可能是圖片過多或網路問題，請嘗試分次上傳。");
+      const errorMsg = error?.message || "未知錯誤";
+      alert(`分析失敗：${errorMsg}\n\n這可能是因為一次上傳過多圖片（建議每次 5-10 張）或網路不穩定。請嘗試分次上傳。`);
     } finally {
       setIsAnalyzing(false);
       setAnalysisProgress(null);
