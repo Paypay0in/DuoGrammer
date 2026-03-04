@@ -1,6 +1,6 @@
 {
-  "name": "Remix: Dugrammer",
-  "description": "A minimalist screenshot collector and analyzer for learning, shopping, and exploration.",
+  "name": "DuoGrammar: TCF Canada Companion",
+  "description": "A comprehensive French learning tool that transforms Duolingo screenshots into structured TCF Canada study notes and practice sessions.",
   "requestFramePermissions": [
     "microphone"
   ]

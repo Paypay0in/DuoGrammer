@@ -920,13 +920,12 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-6">
-            {(currentAnalysis || history.length > 0) && (
-              <div className="hidden md:flex bg-duo-light p-1.5 rounded-2xl border border-duo-border">
+            <div className="hidden md:flex bg-duo-light/50 p-1 rounded-2xl border border-duo-border">
                 <button 
                   onClick={() => setActiveTab('study')}
                   disabled={!currentAnalysis}
                   className={cn(
-                    "px-6 py-2 rounded-xl text-sm font-bold transition-all duration-200",
+                    "px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200",
                     activeTab === 'study' ? "bg-white text-duo-blue shadow-sm" : "text-duo-gray hover:text-duo-dark",
                     !currentAnalysis && "opacity-50 cursor-not-allowed"
                   )}
@@ -942,7 +941,7 @@ export default function App() {
                     }
                   }}
                   className={cn(
-                    "px-6 py-2 rounded-xl text-sm font-bold transition-all duration-200",
+                    "px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200",
                     activeTab === 'summary' ? "bg-white text-duo-yellow shadow-sm" : "text-duo-gray hover:text-duo-dark"
                   )}
                 >
@@ -958,7 +957,7 @@ export default function App() {
                     }
                   }}
                   className={cn(
-                    "px-6 py-2 rounded-xl text-sm font-bold transition-all duration-200",
+                    "px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200",
                     activeTab === 'practice' ? "bg-white text-duo-green shadow-sm" : "text-duo-gray hover:text-duo-dark"
                   )}
                 >
@@ -973,14 +972,13 @@ export default function App() {
                     }
                   }}
                   className={cn(
-                    "px-6 py-2 rounded-xl text-sm font-bold transition-all duration-200",
+                    "px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200",
                     activeTab === 'flashcards' ? "bg-white text-duo-red shadow-sm" : "text-duo-gray hover:text-duo-dark"
                   )}
                 >
                   動詞閃卡
                 </button>
               </div>
-            )}
             <button 
               onClick={() => setShowHistory(!showHistory)}
               className="p-3 hover:bg-duo-light rounded-2xl transition-all relative group"
@@ -1000,7 +998,7 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           {/* Left Column: Upload & Image */}
-          <div className="lg:col-span-4 space-y-8">
+          <div className="lg:col-span-3 space-y-6">
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1008,7 +1006,7 @@ export default function App() {
               onDrop={onDrop}
               onClick={() => fileInputRef.current?.click()}
               className={cn(
-                "relative aspect-[9/16] max-h-[400px] w-full bg-white border-4 border-dashed border-duo-border rounded-[40px] flex flex-col items-center justify-center cursor-pointer transition-all hover:border-duo-blue group overflow-hidden shadow-sm hover:shadow-xl hover:shadow-duo-blue/5",
+                "relative aspect-[4/5] max-h-[320px] w-full bg-white border-4 border-dashed border-duo-border rounded-[32px] flex flex-col items-center justify-center cursor-pointer transition-all hover:border-duo-blue group overflow-hidden shadow-sm hover:shadow-xl hover:shadow-duo-blue/5",
                 image && "border-solid border-duo-blue"
               )}
             >
@@ -1037,10 +1035,10 @@ export default function App() {
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="duo-card p-6 border-duo-blue shadow-lg shadow-duo-blue/5 space-y-6"
+                className="duo-card p-5 border-duo-blue shadow-lg shadow-duo-blue/5 space-y-4"
               >
-                <div className="flex items-center gap-5">
-                  <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 border-2 border-duo-border bg-duo-light shadow-inner flex items-center justify-center">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 border-duo-border bg-duo-light shadow-inner flex items-center justify-center">
                     {currentAnalysis.image ? (
                       <img src={currentAnalysis.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
@@ -1057,8 +1055,14 @@ export default function App() {
                     >
                       <ChevronRight className="w-3 h-3 rotate-180" /> 返回主頁
                     </button>
-                    <h3 className="font-extrabold text-duo-dark truncate text-xl font-display">{currentAnalysis.title}</h3>
-                    <p className="text-xs font-bold text-duo-gray mt-1">{new Date(currentAnalysis.timestamp).toLocaleString()}</p>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="px-2 py-0.5 bg-duo-blue/10 text-duo-blue text-[10px] font-black rounded-md uppercase tracking-wider">Active Unit</span>
+                    </div>
+                    <h3 className="font-black text-duo-dark truncate text-xl font-display leading-tight">{currentAnalysis.title}</h3>
+                    <p className="text-[10px] font-bold text-duo-gray mt-1 uppercase tracking-widest flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-duo-yellow" />
+                      提取於 {new Date(currentAnalysis.timestamp).toLocaleDateString()}
+                    </p>
                   </div>
                 </div>
                 
@@ -1086,7 +1090,7 @@ export default function App() {
           </div>
 
           {/* Right Column: Content */}
-          <div className="lg:col-span-8 space-y-6">
+          <div className="lg:col-span-9 space-y-6">
             {/* Mobile Tabs */}
             {(currentAnalysis || history.length > 0) && (
               <div className="flex md:hidden bg-duo-border/30 p-1.5 rounded-2xl mb-6 overflow-x-auto no-scrollbar border border-duo-border">
