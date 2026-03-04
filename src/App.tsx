@@ -381,8 +381,8 @@ export default function App() {
       const allExtractedResults: any[] = [];
       const base64List: string[] = [];
 
-      // If 5 or fewer images, do it in ONE SINGLE PASS to save API calls
-      if (fileArray.length <= 5) {
+      // If 20 or fewer images, do it in ONE SINGLE PASS to save API calls and avoid rate limits
+      if (fileArray.length <= 20) {
         const chunkBase64: string[] = [];
         for (let j = 0; j < fileArray.length; j++) {
           setAnalysisProgress({ current: j + 1, total: fileArray.length + 1 });
@@ -399,10 +399,10 @@ export default function App() {
         }));
 
         const singlePassPrompt = `
-          你是一個頂尖的法文教學專家。請分析這些 Duolingo 截圖並直接整理成一個系統化的學習單元。
+          你是一個頂尖的法文教學專家。請分析這組 Duolingo 截圖（共 ${fileArray.length} 張）並整理成一個系統化的學習單元。
           
           任務：
-          1. **精確提取**：提取所有對話、生字與語法點。
+          1. **深度提取**：請仔細掃描所有圖片，提取所有對話、句子、生字與語法點。
           2. **專業解析**：提供詳細的文法解釋（包含 Markdown 表格）。
           3. **格式要求**：務必回傳純 JSON 陣列，不要有 Markdown 區塊。
           
@@ -435,8 +435,8 @@ export default function App() {
         return;
       }
 
-      // For larger batches, use chunking
-      const CHUNK_SIZE = 5;
+      // For extremely large batches (> 20), use chunking
+      const CHUNK_SIZE = 10;
       for (let i = 0; i < fileArray.length; i += CHUNK_SIZE) {
         if (i > 0) await new Promise(r => setTimeout(r, 4000));
         
