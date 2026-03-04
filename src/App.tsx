@@ -229,6 +229,27 @@ export default function App() {
     });
   };
 
+  const safeJsonParse = (str: string, fallback: any = []) => {
+    try {
+      // Remove potential markdown code blocks
+      const cleaned = str.replace(/```json\n?/, '').replace(/```\n?$/, '').trim();
+      return JSON.parse(cleaned);
+    } catch (e) {
+      console.error("JSON Parse Error:", e, "Raw string:", str);
+      // Try to fix common issues like unescaped backslashes
+      try {
+        const fixed = str
+          .replace(/\\([^"\\\/bfnrtu])/g, '$1') // Remove invalid backslash escapes
+          .replace(/```json\n?/, '')
+          .replace(/```\n?$/, '')
+          .trim();
+        return JSON.parse(fixed);
+      } catch (e2) {
+        return fallback;
+      }
+    }
+  };
+
   const processFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
@@ -288,7 +309,7 @@ export default function App() {
           config: { responseMimeType: "application/json" }
         });
 
-        allExtractedResults.push(JSON.parse(response.text || "{}"));
+        allExtractedResults.push(safeJsonParse(response.text || "{}", {}));
       }
 
       // Final consolidation step
@@ -338,7 +359,7 @@ export default function App() {
         config: { responseMimeType: "application/json" }
       });
 
-      const results = JSON.parse(finalResponse.text || "[]");
+      const results = safeJsonParse(finalResponse.text || "[]", []);
       
       setHistory(prev => {
         let newHistory = [...prev];
@@ -686,34 +707,6 @@ export default function App() {
                   </div>
                 </div>
               </motion.div>
-            )}
-
-            {history.length > 0 && !currentAnalysis && (
-              <div className="space-y-4">
-                <h4 className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] px-2">學習卡片庫</h4>
-                <div className="grid grid-cols-1 gap-4">
-                  {history.map((item) => (
-                    <motion.button
-                      key={item.id}
-                      onClick={() => selectHistoryItem(item)}
-                      className="duo-card p-4 flex items-center gap-4 hover:border-duo-blue transition-all group text-left"
-                    >
-                      <div className="w-12 h-12 bg-duo-light rounded-xl flex items-center justify-center border border-duo-border overflow-hidden flex-shrink-0">
-                        {item.image ? (
-                          <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <ImageIcon className="w-5 h-5 text-duo-gray" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h5 className="font-bold text-sm truncate group-hover:text-duo-blue transition-colors">{item.title}</h5>
-                        <p className="text-[10px] text-duo-gray font-medium">{new Date(item.timestamp).toLocaleDateString()}</p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-duo-border group-hover:text-duo-blue" />
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
             )}
 
             <input 
