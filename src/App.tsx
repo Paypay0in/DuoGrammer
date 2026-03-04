@@ -170,6 +170,40 @@ export default function App() {
     }
   };
 
+  const resizeImage = (file: File, maxWidth = 1024, maxHeight = 1024): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height *= maxWidth / width;
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width *= maxHeight / height;
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const processFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
@@ -181,68 +215,97 @@ export default function App() {
     setActiveTab('study');
 
     try {
-      const base64List: string[] = [];
-      for (let i = 0; i < fileArray.length; i++) {
-        setAnalysisProgress({ current: i + 1, total: fileArray.length });
-        const file = fileArray[i];
-        const base64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
-        base64List.push(base64);
-      }
-
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       const model = "gemini-3-flash-preview";
       
-      const imageParts = base64List.map(base64 => ({
-        inlineData: {
-          mimeType: "image/png",
-          data: base64.split(',')[1],
-        },
-      }));
+      // Process in chunks of 5 to avoid payload limits
+      const CHUNK_SIZE = 5;
+      const allExtractedResults: any[] = [];
+      const base64List: string[] = [];
 
-      // Provide existing units for context and potential merging
-      const existingUnitsInfo = history.map(h => `- ${h.title}: ${h.lessonText.substring(0, 100)}...`).join('\n');
-
-      const prompt = `
-        你是一個專業的法文老師。這些是來自 Duolingo 的學習截圖。
+      for (let i = 0; i < fileArray.length; i += CHUNK_SIZE) {
+        const chunk = fileArray.slice(i, i + CHUNK_SIZE);
+        const chunkBase64: string[] = [];
         
-        任務：
-        1. 判斷截圖的連貫性。如果多張截圖屬於同一個連貫的對話、課文或主題（例如：餐廳點餐），請將它們合併為一個單元。
-        2. 判別主題類別。如果截圖與現有的單元主題高度相似，請建議合併。
-        3. **精確提取課文**：請逐字逐句地從圖片中提取出所有的法文句子、對話或題目內容，並整理在 "lessonText" 欄位中。
+        for (let j = 0; j < chunk.length; j++) {
+          const currentIdx = i + j;
+          setAnalysisProgress({ current: currentIdx + 1, total: fileArray.length });
+          const resized = await resizeImage(chunk[j]);
+          chunkBase64.push(resized);
+          if (i === 0 && j === 0) base64List.push(resized); // Keep first image for display
+        }
+
+        const imageParts = chunkBase64.map(base64 => ({
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: base64.split(',')[1],
+          },
+        }));
+
+        const chunkPrompt = `
+          你是一個專業的法文老師。這是來自 Duolingo 的學習截圖（第 ${Math.floor(i/CHUNK_SIZE) + 1} 批）。
+          請幫我提取這些圖片中的內容：
+          1. 提取所有法文課文、對話或題目。
+          2. 提取出現的生字及其解釋。
+          3. 總結這幾張圖片中提到的語法點。
+          
+          請以 JSON 格式回傳：
+          {
+            "lessonText": "提取的課文",
+            "vocabulary": ["單字1 (解釋)", "單字2 (解釋)"],
+            "grammar": "語法解說"
+          }
+        `;
+
+        const response = await ai.models.generateContent({
+          model,
+          contents: { parts: [...imageParts, { text: chunkPrompt }] },
+          config: { responseMimeType: "application/json" }
+        });
+
+        allExtractedResults.push(JSON.parse(response.text || "{}"));
+      }
+
+      // Final consolidation step
+      setAnalysisProgress({ current: fileArray.length, total: fileArray.length });
+      const combinedData = JSON.stringify(allExtractedResults);
+      const existingUnitsInfo = history.map(h => `- ${h.title}`).join('\n');
+
+      const consolidationPrompt = `
+        你是一個專業的法文老師。我剛剛分批提取了多張 Duolingo 截圖的內容，現在請你將這些內容整理成連貫的學習單元。
+        
+        提取到的原始數據：
+        ${combinedData}
         
         現有的單元列表：
         ${existingUnitsInfo || "尚無現有單元"}
         
-        請以 JSON 陣列格式回傳，每個元素代表一個「建議」的單元：
+        任務：
+        1. 判斷這些內容是否屬於同一個主題或連貫的課程。如果是，請合併為一個單元；如果包含多個不同主題，請拆分為多個單元。
+        2. 如果內容與現有單元相關，請建議合併。
+        3. 整理出精確的課文、單字表與詳細的語法筆記。
+        
+        請以 JSON 陣列格式回傳：
         [
           {
             "title": "單元標題",
-            "lessonText": "完整課文內容（請逐字提取圖片中的法文原文，若有多句請換行排列）",
-            "vocabulary": ["單字1 (解釋)", "單字2 (解釋)"],
+            "lessonText": "完整課文內容",
+            "vocabulary": ["單字1 (解釋)"],
             "grammar": "詳細語法解說",
             "practicePrompt": "口語練習開場白",
             "fullMarkdown": "完整學習筆記",
-            "mergeWithExistingTitle": "如果此內容應合併至現有單元，請填寫該單元的精確標題，否則留空"
+            "mergeWithExistingTitle": "現有單元標題或留空"
           }
         ]
-        
-        注意：
-        - 如果是合併至現有單元，請將「新內容」與「舊內容」進行有機整合，產生一份更完整的筆記。
-        - 標題要簡短有力。
-        - 請使用繁體中文進行解說。
       `;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
+      const finalResponse = await ai.models.generateContent({
         model,
-        contents: { parts: [...imageParts, { text: prompt }] },
+        contents: [{ parts: [{ text: consolidationPrompt }] }],
         config: { responseMimeType: "application/json" }
       });
 
-      const results = JSON.parse(response.text || "[]");
+      const results = JSON.parse(finalResponse.text || "[]");
       
       setHistory(prev => {
         let newHistory = [...prev];
@@ -251,7 +314,6 @@ export default function App() {
           
           const newResult: AnalysisResult = {
             id: existingIndex !== -1 ? newHistory[existingIndex].id : crypto.randomUUID(),
-            // image: base64List[0], // Removed to avoid retention
             title: res.title,
             explanation: res.fullMarkdown,
             lessonText: res.lessonText,
@@ -274,7 +336,7 @@ export default function App() {
         const firstRes = results[0];
         const displayResult: AnalysisResult = {
           id: crypto.randomUUID(),
-          image: base64List[0], // Keep for current display
+          image: base64List[0],
           title: firstRes.title,
           explanation: firstRes.fullMarkdown,
           lessonText: firstRes.lessonText,
@@ -291,7 +353,7 @@ export default function App() {
 
     } catch (error) {
       console.error("Batch analysis failed:", error);
-      alert("分析失敗，請重試。");
+      alert("分析失敗，可能是圖片過多或網路問題，請嘗試分次上傳。");
     } finally {
       setIsAnalyzing(false);
       setAnalysisProgress(null);
