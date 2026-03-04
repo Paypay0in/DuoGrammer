@@ -1108,12 +1108,12 @@ export default function App() {
                   <div className="space-y-12">
                     {globalSummary ? (
                       <>
-                        <div className="markdown-body prose prose-slate max-w-none prose-table:table-auto">
+                        <div className="markdown-body">
                           <Markdown
                             remarkPlugins={[remarkGfm]}
                             components={{
                               table: ({node, ...props}) => (
-                                <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white">
+                                <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
                                   <table className="w-full border-collapse min-w-[600px]" {...props} />
                                 </div>
                               ),
@@ -1151,16 +1151,16 @@ export default function App() {
 
                           <div className="space-y-8">
                             {globalSummary.worksheet.map((q, idx) => (
-                              <div key={idx} className="bg-white rounded-3xl p-8 border-2 border-duo-border shadow-sm">
-                                <div className="flex items-start gap-4 mb-6">
-                                  <span className="w-10 h-10 bg-duo-light rounded-xl flex items-center justify-center font-black text-duo-gray flex-shrink-0">
+                              <div key={idx} className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-duo-border shadow-sm">
+                                <div className="flex items-start gap-3 sm:gap-4 mb-6">
+                                  <span className="w-8 h-8 sm:w-10 sm:h-10 bg-duo-light rounded-xl flex items-center justify-center font-black text-duo-gray flex-shrink-0 text-sm sm:text-base">
                                     {idx + 1}
                                   </span>
-                                  <p className="text-xl font-bold text-duo-dark pt-1">{q.question}</p>
+                                  <p className="text-lg sm:text-xl font-bold text-duo-dark pt-1">{q.question}</p>
                                 </div>
 
                                 {q.type === 'multiple-choice' ? (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 ml-14">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 ml-0 sm:ml-14">
                                     {q.options?.map((opt, optIdx) => (
                                       <button
                                         key={optIdx}
@@ -1171,7 +1171,7 @@ export default function App() {
                                           setWorksheetAnswers(newAnswers);
                                         }}
                                         className={cn(
-                                          "p-4 rounded-2xl border-2 font-bold text-left transition-all",
+                                          "p-4 rounded-2xl border-2 font-bold text-left transition-all text-sm sm:text-base",
                                           worksheetAnswers[idx] === opt
                                             ? "bg-duo-blue border-duo-blue text-white shadow-lg shadow-duo-blue/20"
                                             : "bg-white border-duo-border text-duo-dark hover:border-duo-blue/40",
@@ -1184,7 +1184,7 @@ export default function App() {
                                     ))}
                                   </div>
                                 ) : (
-                                  <div className="ml-14">
+                                  <div className="ml-0 sm:ml-14">
                                     <input
                                       type="text"
                                       disabled={globalSummary.score !== undefined}
@@ -1196,7 +1196,7 @@ export default function App() {
                                       }}
                                       placeholder="請輸入答案..."
                                       className={cn(
-                                        "w-full bg-duo-light border-2 border-duo-border rounded-2xl px-6 py-4 font-bold focus:outline-none focus:border-duo-blue transition-all",
+                                        "w-full bg-duo-light border-2 border-duo-border rounded-2xl px-6 py-4 font-bold focus:outline-none focus:border-duo-blue transition-all text-sm sm:text-base",
                                         globalSummary.score !== undefined && worksheetAnswers[idx].toLowerCase().trim() === q.correctAnswer.toLowerCase().trim() && "border-duo-green bg-duo-green/5",
                                         globalSummary.score !== undefined && worksheetAnswers[idx].toLowerCase().trim() !== q.correctAnswer.toLowerCase().trim() && "border-duo-red bg-duo-red/5"
                                       )}
@@ -1249,7 +1249,7 @@ export default function App() {
                                   </div>
                                   <h4 className="text-3xl font-extrabold text-duo-dark font-display">老師的批改與建議</h4>
                                 </div>
-                                <div className="markdown-body prose prose-slate max-w-none">
+                                <div className="markdown-body">
                                   <Markdown remarkPlugins={[remarkGfm]}>
                                     {globalSummary.feedback}
                                   </Markdown>
@@ -1357,12 +1357,12 @@ export default function App() {
                                   </div>
                                 )}
 
-                                  <div className="markdown-body prose prose-slate max-w-none prose-table:table-auto">
+                                  <div className="markdown-body">
                                     <Markdown
                                       remarkPlugins={[remarkGfm]}
                                       components={{
                                         table: ({node, ...props}) => (
-                                          <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white">
+                                          <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
                                             <table className="w-full border-collapse min-w-[500px]" {...props} />
                                           </div>
                                         ),
