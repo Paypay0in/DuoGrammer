@@ -41,7 +41,10 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number } | null>(null);
   const [currentAnalysis, setCurrentAnalysis] = useState<AnalysisResult | null>(null);
-  const [history, setHistory] = useState<AnalysisResult[]>([]);
+  const [history, setHistory] = useState<AnalysisResult[]>(() => {
+    const saved = localStorage.getItem('duo_grammar_history');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [showHistory, setShowHistory] = useState(false);
   const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary'>('study');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -50,14 +53,36 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [isAutoSpeak, setIsAutoSpeak] = useState(true);
   const [isSlowMode, setIsSlowMode] = useState(false);
-  const [globalSummary, setGlobalSummary] = useState<string | null>(null);
+  const [globalSummary, setGlobalSummary] = useState<string | null>(() => {
+    return localStorage.getItem('duo_grammar_summary');
+  });
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
-  const [unitChatMessages, setUnitChatMessages] = useState<Record<string, ChatMessage[]>>({});
+  const [unitChatMessages, setUnitChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
+    const saved = localStorage.getItem('duo_grammar_unit_chats');
+    return saved ? JSON.parse(saved) : {};
+  });
   const [isUnitChatting, setIsUnitChatting] = useState<Record<string, boolean>>({});
   const [unitInput, setUnitInput] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Persistence
+  useEffect(() => {
+    localStorage.setItem('duo_grammar_history', JSON.stringify(history));
+  }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem('duo_grammar_unit_chats', JSON.stringify(unitChatMessages));
+  }, [unitChatMessages]);
+
+  useEffect(() => {
+    if (globalSummary) {
+      localStorage.setItem('duo_grammar_summary', globalSummary);
+    } else {
+      localStorage.removeItem('duo_grammar_summary');
+    }
+  }, [globalSummary]);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -244,16 +269,16 @@ export default function App() {
 
         const chunkPrompt = `
           你是一個專業的法文老師。這是來自 Duolingo 的學習截圖（第 ${Math.floor(i/CHUNK_SIZE) + 1} 批）。
-          請幫我提取這些圖片中的內容：
-          1. 提取所有法文課文、對話或題目。
-          2. 提取出現的生字及其解釋。
-          3. 總結這幾張圖片中提到的語法點。
+          請幫我精確提取這些圖片中的教學內容：
+          1. **課文與對話**：逐字提取所有法文句子，包含練習題中的題目與選項。
+          2. **生字與短語**：提取圖片中強調的單字、點擊翻譯的單字，並附上其在該語境下的解釋。
+          3. **語法線索**：觀察圖片中的語法現象（如：動詞變位、性數一致、時態等），並進行初步總結。
           
           請以 JSON 格式回傳：
           {
-            "lessonText": "提取的課文",
-            "vocabulary": ["單字1 (解釋)", "單字2 (解釋)"],
-            "grammar": "語法解說"
+            "lessonText": "提取的完整法文內容",
+            "vocabulary": ["單字 (詞性) - 解釋"],
+            "grammar": "初步語法觀察與解釋"
           }
         `;
 
@@ -272,7 +297,7 @@ export default function App() {
       const existingUnitsInfo = history.map(h => `- ${h.title}`).join('\n');
 
       const consolidationPrompt = `
-        你是一個專業的法文老師。我剛剛分批提取了多張 Duolingo 截圖的內容，現在請你將這些內容整理成連貫的學習單元。
+        你是一個頂尖的法文教學專家。我剛剛分批提取了多張 Duolingo 截圖的內容，現在請你將這些內容整理成極具深度且系統化的學習單元。
         
         提取到的原始數據：
         ${combinedData}
@@ -281,22 +306,30 @@ export default function App() {
         ${existingUnitsInfo || "尚無現有單元"}
         
         任務：
-        1. 判斷這些內容是否屬於同一個主題或連貫的課程。如果是，請合併為一個單元；如果包含多個不同主題，請拆分為多個單元。
-        2. 如果內容與現有單元相關，請建議合併。
-        3. 整理出精確的課文、單字表與詳細的語法筆記。
+        1. **深度知識整合**：將提取到的零散資訊整合為邏輯嚴密的教學單元。
+        2. **專業文法解析**：在 "grammar" 與 "fullMarkdown" 欄位中，提供深度的文法解釋。包含：
+           - 核心文法規則。
+           - 變位表或用法對照表（請務必使用 Markdown 表格）。
+           - 常見錯誤提醒。
+           - 課文中的具體例句分析。
+        3. **精確課文還原**：確保 "lessonText" 完整反映了截圖中的所有對話與句子。
         
         請以 JSON 陣列格式回傳：
         [
           {
-            "title": "單元標題",
-            "lessonText": "完整課文內容",
-            "vocabulary": ["單字1 (解釋)"],
-            "grammar": "詳細語法解說",
-            "practicePrompt": "口語練習開場白",
-            "fullMarkdown": "完整學習筆記",
+            "title": "單元標題 (例如：單元 X - 主題名稱)",
+            "lessonText": "完整法文原文內容",
+            "vocabulary": ["單字 (詞性) - 中文解釋 - 例句"],
+            "grammar": "核心文法重點摘要",
+            "practicePrompt": "充滿鼓勵性的口語練習開場白",
+            "fullMarkdown": "# 學習筆記：[標題]\n\n## 📝 課文原文\n[原文]\n\n## 💡 文法深度解析\n[詳細解釋，包含表格、條列式重點]\n\n## 📚 重點單字與片語\n[清單]\n\n## ⚠️ 注意事項與常見錯誤\n[提醒]",
             "mergeWithExistingTitle": "現有單元標題或留空"
           }
         ]
+        
+        注意：
+        - 筆記風格要像專業教材，排版要美觀（善用標題、粗體、表格）。
+        - 使用繁體中文解說，法文部分請附上中文翻譯。
       `;
 
       const finalResponse = await ai.models.generateContent({
