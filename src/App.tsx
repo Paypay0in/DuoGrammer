@@ -205,8 +205,10 @@ export default function App() {
         : "";
 
       const prompt = `
-        你是一個頂尖的法文教學專家。學生目前已經學習了多個 Duolingo 單元。
-        請幫學生將以下所有單元的知識進行「系統化統整」，並出一份「複習學習單」。
+        你是一個頂尖的法文教學專家，專門輔導學生通過 TCF Canada 考試。
+        學生目前已經學習了多個 Duolingo 單元，目標是將這些基礎知識轉化為 TCF Canada 考試所需的實戰能力。
+        
+        請幫學生將以下所有單元的知識進行「深度系統化統整」，並出一份「TCF Canada 模擬練習學習單」。
         
         ${historyContext}
 
@@ -214,12 +216,20 @@ export default function App() {
         ${allData}
 
         請回傳 JSON 格式，包含以下欄位：
-        1. "content": 系統化複習筆記（Markdown 格式，包含表格、重點總結、易錯點提醒）。
-        2. "worksheet": 包含 5 題練習題的陣列。每題包含 "question" (題目), "type" (multiple-choice, fill-in-the-blank, translation), "options" (如果是選擇題), "correctAnswer" (正確答案)。
+        1. "content": 深度系統化複習筆記（Markdown 格式）。
+           要求：
+           - 內容必須豐富詳盡，不能過於簡略。
+           - 包含「核心文法表格」、「高頻單字與 TCF 常考語境」、「易混淆點深度解析」。
+           - 增加「TCF Canada 備考建議」章節，針對目前學習的內容提供考試技巧。
+           - 使用豐富的 Markdown 格式（粗體、列表、引用、表格）。
+        2. "worksheet": 包含 8 題練習題的陣列。
+           要求：
+           - 題目設計必須參考 TCF Canada 的題型（例如：Structure de la langue 語法結構、Compréhension écrite 閱讀理解）。
+           - 難度應涵蓋 A1 到 B2（視學習內容而定）。
+           - 每題包含 "question" (題目), "type" (multiple-choice, fill-in-the-blank, translation), "options" (如果是選擇題), "correctAnswer" (正確答案)。
         
         注意：
-        - 筆記要包含當天日期與產出時間。
-        - 學習單題目要涵蓋所有單元的重點。
+        - 筆記要包含產出時間：${new Date().toLocaleString()}。
         - 務必回傳純 JSON。
       `;
 
@@ -278,7 +288,7 @@ export default function App() {
       const model = "gemini-3-flash-preview";
 
       const prompt = `
-        你是一個法文老師。請批改學生的學習單。
+        你是一個資深的 TCF Canada 考官與法文老師。請批改學生的學習單。
         
         題目與正確答案：
         ${globalSummary.worksheet.map((q, i) => `${i+1}. ${q.question}\n正確答案: ${q.correctAnswer}`).join('\n')}
@@ -288,8 +298,8 @@ export default function App() {
         
         請給出：
         1. 總分 (0-100)。
-        2. 每題的詳細批改建議與解析。
-        3. 整體的學習建議。
+        2. 每題的詳細批改建議與解析，並指出該題對應的 TCF Canada 考點。
+        3. 針對 TCF Canada 考試的整體學習建議與弱點加強方案。
         
         請回傳 JSON 格式：
         {
