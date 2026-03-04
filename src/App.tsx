@@ -97,6 +97,7 @@ export default function App() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
+  const [isWorksheetExpanded, setIsWorksheetExpanded] = useState(true);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
   const [worksheetAnswers, setWorksheetAnswers] = useState<string[]>([]);
@@ -355,9 +356,11 @@ export default function App() {
         
         請給出：
         1. 總分 (0-100)。
-        2. 每題的詳細批改建議與解析，並指出該題對應的 TCF Canada 考點。
+        2. 每題的詳細批改建議與解析，並指出該題對應的 TCF Canada 考點。請務必使用清晰的列表格式，每一項建議之間要有明顯的斷行。
         3. 針對 TCF Canada 考試的整體學習建議與弱點加強方案。
         4. 如果學生有動詞變位或單字錯誤，請在建議中明確提到可以使用「動詞閃卡」功能進行專項練習。
+        
+        注意：在 "feedback" 欄位中，請使用豐富的 Markdown 格式（如 ### 標題、* 列表、> 引用），並確保段落之間有足夠的空行（\n\n），以確保排版整潔易讀。
         
         請回傳 JSON 格式：
         {
@@ -1245,174 +1248,188 @@ export default function App() {
                         {/* Worksheet Section */}
                         {globalSummary.worksheet && Array.isArray(globalSummary.worksheet) && globalSummary.worksheet.length > 0 && (
                           <div className="mt-16 pt-12 border-t-4 border-duo-border/30">
-                            <div className="flex items-center justify-between mb-10">
+                            <button 
+                              onClick={() => setIsWorksheetExpanded(!isWorksheetExpanded)}
+                              className="w-full flex items-center justify-between mb-10 group"
+                            >
                               <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-duo-blue rounded-2xl flex items-center justify-center shadow-lg shadow-duo-blue/20">
+                                <div className="w-12 h-12 bg-duo-blue rounded-2xl flex items-center justify-center shadow-lg shadow-duo-blue/20 group-hover:scale-110 transition-transform">
                                   <ClipboardCheck className="text-white w-7 h-7" />
                                 </div>
-                                <div>
+                                <div className="text-left">
                                   <h3 className="text-2xl font-extrabold text-duo-dark font-display">今日複習學習單</h3>
                                   <p className="text-sm font-bold text-duo-gray">根據你學過的內容自動生成的練習題</p>
                                 </div>
                               </div>
-                              {globalSummary.score !== undefined && (
-                                <div className="flex items-center gap-3 bg-duo-green/10 px-6 py-3 rounded-2xl border-2 border-duo-green/20">
-                                  <CheckCircle2 className="w-6 h-6 text-duo-green" />
-                                  <span className="text-2xl font-black text-duo-green">{globalSummary.score} / 100</span>
+                              <div className="flex items-center gap-6">
+                                {globalSummary.score !== undefined && (
+                                  <div className="flex items-center gap-3 bg-duo-green/10 px-6 py-3 rounded-2xl border-2 border-duo-green/20">
+                                    <CheckCircle2 className="w-6 h-6 text-duo-green" />
+                                    <span className="text-2xl font-black text-duo-green">{globalSummary.score} / 100</span>
+                                  </div>
+                                )}
+                                <div className={cn("transition-transform duration-300", !isWorksheetExpanded && "rotate-180")}>
+                                  <ChevronUp className="w-6 h-6 text-duo-gray" />
                                 </div>
-                              )}
-                            </div>
+                              </div>
+                            </button>
 
-                            <div className="space-y-8">
-                              {globalSummary.worksheet.map((q, idx) => {
-                                if (!q) return null;
-                                return (
-                                  <div key={idx} className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-duo-border shadow-sm">
-                                    <div className="flex items-start gap-3 sm:gap-4 mb-6">
-                                      <span className="w-8 h-8 sm:w-10 sm:h-10 bg-duo-light rounded-xl flex items-center justify-center font-black text-duo-gray flex-shrink-0 text-sm sm:text-base">
-                                        {idx + 1}
-                                      </span>
-                                      <p className="text-lg sm:text-xl font-bold text-duo-dark pt-1">{q.question || "未命名題目"}</p>
-                                    </div>
+                            <motion.div
+                              initial={false}
+                              animate={{ height: isWorksheetExpanded ? 'auto' : 0, opacity: isWorksheetExpanded ? 1 : 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-8">
+                                {globalSummary.worksheet.map((q, idx) => {
+                                  if (!q) return null;
+                                  return (
+                                    <div key={idx} className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-duo-border shadow-sm">
+                                      <div className="flex items-start gap-3 sm:gap-4 mb-6">
+                                        <span className="w-8 h-8 sm:w-10 sm:h-10 bg-duo-light rounded-xl flex items-center justify-center font-black text-duo-gray flex-shrink-0 text-sm sm:text-base">
+                                          {idx + 1}
+                                        </span>
+                                        <p className="text-lg sm:text-xl font-bold text-duo-dark pt-1">{q.question || "未命名題目"}</p>
+                                      </div>
 
-                                    {q.type === 'multiple-choice' ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 ml-0 sm:ml-14">
-                                        {q.options?.map((opt, optIdx) => (
-                                          <button
-                                            key={optIdx}
+                                      {q.type === 'multiple-choice' ? (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 ml-0 sm:ml-14">
+                                          {q.options?.map((opt, optIdx) => (
+                                            <button
+                                              key={optIdx}
+                                              disabled={globalSummary.score !== undefined}
+                                              onClick={() => {
+                                                const newAnswers = [...worksheetAnswers];
+                                                newAnswers[idx] = opt;
+                                                setWorksheetAnswers(newAnswers);
+                                              }}
+                                              className={cn(
+                                                "p-4 rounded-2xl border-2 font-bold text-left transition-all text-sm sm:text-base",
+                                                worksheetAnswers[idx] === opt
+                                                  ? "bg-duo-blue border-duo-blue text-white shadow-lg shadow-duo-blue/20"
+                                                  : "bg-white border-duo-border text-duo-dark hover:border-duo-blue/40",
+                                                globalSummary.score !== undefined && q.correctAnswer === opt && "border-duo-green bg-duo-green/10 text-duo-green",
+                                                globalSummary.score !== undefined && worksheetAnswers[idx] === opt && q.correctAnswer !== opt && "border-duo-red bg-duo-red/10 text-duo-red"
+                                              )}
+                                            >
+                                              {opt}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="ml-0 sm:ml-14">
+                                          <input
+                                            type="text"
                                             disabled={globalSummary.score !== undefined}
-                                            onClick={() => {
+                                            value={worksheetAnswers[idx] || ''}
+                                            onChange={(e) => {
                                               const newAnswers = [...worksheetAnswers];
-                                              newAnswers[idx] = opt;
+                                              newAnswers[idx] = e.target.value;
                                               setWorksheetAnswers(newAnswers);
                                             }}
+                                            placeholder="請輸入答案..."
                                             className={cn(
-                                              "p-4 rounded-2xl border-2 font-bold text-left transition-all text-sm sm:text-base",
-                                              worksheetAnswers[idx] === opt
-                                                ? "bg-duo-blue border-duo-blue text-white shadow-lg shadow-duo-blue/20"
-                                                : "bg-white border-duo-border text-duo-dark hover:border-duo-blue/40",
-                                              globalSummary.score !== undefined && q.correctAnswer === opt && "border-duo-green bg-duo-green/10 text-duo-green",
-                                              globalSummary.score !== undefined && worksheetAnswers[idx] === opt && q.correctAnswer !== opt && "border-duo-red bg-duo-red/10 text-duo-red"
+                                              "w-full bg-duo-light border-2 border-duo-border rounded-2xl px-6 py-4 font-bold focus:outline-none focus:border-duo-blue transition-all text-sm sm:text-base",
+                                              globalSummary.score !== undefined && worksheetAnswers[idx]?.toLowerCase().trim() === q.correctAnswer?.toLowerCase().trim() && "border-duo-green bg-duo-green/5",
+                                              globalSummary.score !== undefined && worksheetAnswers[idx]?.toLowerCase().trim() !== q.correctAnswer?.toLowerCase().trim() && "border-duo-red bg-duo-red/5"
                                             )}
-                                          >
-                                            {opt}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <div className="ml-0 sm:ml-14">
-                                        <input
-                                          type="text"
-                                          disabled={globalSummary.score !== undefined}
-                                          value={worksheetAnswers[idx] || ''}
-                                          onChange={(e) => {
-                                            const newAnswers = [...worksheetAnswers];
-                                            newAnswers[idx] = e.target.value;
-                                            setWorksheetAnswers(newAnswers);
-                                          }}
-                                          placeholder="請輸入答案..."
-                                          className={cn(
-                                            "w-full bg-duo-light border-2 border-duo-border rounded-2xl px-6 py-4 font-bold focus:outline-none focus:border-duo-blue transition-all text-sm sm:text-base",
-                                            globalSummary.score !== undefined && worksheetAnswers[idx]?.toLowerCase().trim() === q.correctAnswer?.toLowerCase().trim() && "border-duo-green bg-duo-green/5",
-                                            globalSummary.score !== undefined && worksheetAnswers[idx]?.toLowerCase().trim() !== q.correctAnswer?.toLowerCase().trim() && "border-duo-red bg-duo-red/5"
+                                          />
+                                          {globalSummary.score !== undefined && worksheetAnswers[idx]?.toLowerCase().trim() !== q.correctAnswer?.toLowerCase().trim() && (
+                                            <p className="mt-3 text-sm font-bold text-duo-green flex items-center gap-2">
+                                              <CheckCircle2 className="w-4 h-4" />
+                                              正確答案：{q.correctAnswer}
+                                            </p>
                                           )}
-                                        />
-                                        {globalSummary.score !== undefined && worksheetAnswers[idx]?.toLowerCase().trim() !== q.correctAnswer?.toLowerCase().trim() && (
-                                          <p className="mt-3 text-sm font-bold text-duo-green flex items-center gap-2">
-                                            <CheckCircle2 className="w-4 h-4" />
-                                            正確答案：{q.correctAnswer}
-                                          </p>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {globalSummary.score === undefined ? (
-                              <div className="mt-12 flex justify-center">
-                                <button
-                                  onClick={gradeWorksheet}
-                                  disabled={isGrading || worksheetAnswers.some(a => !a?.trim())}
-                                  className="duo-button-green px-12 py-5 text-xl flex items-center gap-3 shadow-xl shadow-duo-green/20"
-                                >
-                                  {isGrading ? (
-                                    <>
-                                      <Loader2 className="w-6 h-6 animate-spin" />
-                                      老師批改中...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Sparkles className="w-6 h-6" />
-                                      送出學習單
-                                    </>
-                                  )}
-                                </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            ) : (
-                              <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="mt-16 bg-white rounded-[40px] border-4 border-duo-green/30 shadow-2xl shadow-duo-green/5 relative overflow-hidden"
-                              >
-                                <div className="absolute top-0 right-0 p-8 opacity-5">
-                                  <CheckCircle2 className="w-48 h-48 text-duo-green" />
+
+                              {globalSummary.score === undefined ? (
+                                <div className="mt-12 flex justify-center">
+                                  <button
+                                    onClick={gradeWorksheet}
+                                    disabled={isGrading || worksheetAnswers.some(a => !a?.trim())}
+                                    className="duo-button-green px-12 py-5 text-xl flex items-center gap-3 shadow-xl shadow-duo-green/20"
+                                  >
+                                    {isGrading ? (
+                                      <>
+                                        <Loader2 className="w-6 h-6 animate-spin" />
+                                        老師批改中...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="w-6 h-6" />
+                                        送出學習單
+                                      </>
+                                    )}
+                                  </button>
                                 </div>
-                                
-                                <div className="relative z-10">
-                                  <div className="bg-duo-green p-8 flex items-center gap-6">
-                                    <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30">
-                                      <Sparkles className="text-white w-9 h-9" />
-                                    </div>
-                                    <div>
-                                      <h4 className="text-3xl font-black text-white font-display">老師的批改與建議</h4>
-                                      <p className="text-white/80 font-bold text-sm mt-1 uppercase tracking-widest">TCF Canada 備考專屬反饋</p>
-                                    </div>
+                              ) : (
+                                <motion.div
+                                  initial={{ opacity: 0, y: 20 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="mt-16 bg-white rounded-[40px] border-4 border-duo-green/30 shadow-2xl shadow-duo-green/5 relative overflow-hidden"
+                                >
+                                  <div className="absolute top-0 right-0 p-8 opacity-5">
+                                    <CheckCircle2 className="w-48 h-48 text-duo-green" />
                                   </div>
                                   
-                                  <div className="p-8 sm:p-12">
-                                    <div className="markdown-body feedback-markdown">
-                                      <Markdown 
-                                        remarkPlugins={[remarkGfm]}
-                                        components={{
-                                          table: (props) => (
-                                            <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
-                                              <table className="w-full border-collapse min-w-[500px]" {...props} />
-                                            </div>
-                                          ),
-                                          th: (props) => (
-                                            <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
-                                          ),
-                                          td: (props) => (
-                                            <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
-                                          ),
-                                          blockquote: (props) => (
-                                            <blockquote className="border-l-8 border-duo-green bg-duo-green/5 p-6 rounded-r-3xl my-8 italic font-medium text-duo-dark" {...props} />
-                                          )
-                                        }}
-                                      >
-                                        {globalSummary.feedback || ""}
-                                      </Markdown>
+                                  <div className="relative z-10">
+                                    <div className="bg-duo-green p-8 flex items-center gap-6">
+                                      <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30">
+                                        <Sparkles className="text-white w-9 h-9" />
+                                      </div>
+                                      <div>
+                                        <h4 className="text-3xl font-black text-white font-display">老師的批改與建議</h4>
+                                        <p className="text-white/80 font-bold text-sm mt-1 uppercase tracking-widest">TCF Canada 備考專屬反饋</p>
+                                      </div>
                                     </div>
                                     
-                                    <div className="mt-12 pt-10 border-t-2 border-duo-border/50 flex flex-col sm:flex-row items-center justify-between gap-8">
-                                      <div className="flex items-center gap-4 bg-duo-light px-6 py-4 rounded-2xl border-2 border-duo-border/50">
-                                        <AlertCircle className="w-6 h-6 text-duo-blue" />
-                                        <p className="text-sm font-extrabold text-duo-dark">下次統整時，我會特別加強你這次答錯的部分。</p>
+                                    <div className="p-8 sm:p-12">
+                                      <div className="markdown-body feedback-markdown">
+                                        <Markdown 
+                                          remarkPlugins={[remarkGfm]}
+                                          components={{
+                                            table: (props) => (
+                                              <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
+                                                <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                              </div>
+                                            ),
+                                            th: (props) => (
+                                              <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                            ),
+                                            td: (props) => (
+                                              <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                            ),
+                                            blockquote: (props) => (
+                                              <blockquote className="border-l-8 border-duo-green bg-duo-green/5 p-6 rounded-r-3xl my-8 italic font-medium text-duo-dark" {...props} />
+                                            )
+                                          }}
+                                        >
+                                          {globalSummary.feedback || ""}
+                                        </Markdown>
                                       </div>
-                                      <button
-                                        onClick={generateGlobalSummary}
-                                        className="duo-button-blue px-8 py-4 text-sm flex items-center gap-3"
-                                      >
-                                        <RefreshCw className="w-4 h-4" />
-                                        產出新的複習內容
-                                      </button>
+                                      
+                                      <div className="mt-12 pt-10 border-t-2 border-duo-border/50 flex flex-col sm:flex-row items-center justify-between gap-8">
+                                        <div className="flex items-center gap-4 bg-duo-light px-6 py-4 rounded-2xl border-2 border-duo-border/50">
+                                          <AlertCircle className="w-6 h-6 text-duo-blue" />
+                                          <p className="text-sm font-extrabold text-duo-dark">下次統整時，我會特別加強你這次答錯的部分。</p>
+                                        </div>
+                                        <button
+                                          onClick={generateGlobalSummary}
+                                          className="duo-button-blue px-8 py-4 text-sm flex items-center gap-3"
+                                        >
+                                          <RefreshCw className="w-4 h-4" />
+                                          產出新的複習內容
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              </motion.div>
-                            )}
+                                </motion.div>
+                              )}
+                            </motion.div>
                           </div>
                         )}
                       </>
