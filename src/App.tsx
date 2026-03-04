@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, Sparkles, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -61,6 +61,7 @@ export default function App() {
     const saved = localStorage.getItem('duo_grammar_unit_chats');
     return saved ? JSON.parse(saved) : {};
   });
+  const [searchQuery, setSearchQuery] = useState('');
   const [isUnitChatting, setIsUnitChatting] = useState<Record<string, boolean>>({});
   const [unitInput, setUnitInput] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -158,6 +159,7 @@ export default function App() {
 
   const generateGlobalSummary = async () => {
     if (history.length === 0) return;
+    setGlobalSummary(null);
     setIsGeneratingSummary(true);
     setActiveTab('summary');
 
@@ -589,7 +591,13 @@ export default function App() {
                   單元筆記
                 </button>
                 <button 
-                  onClick={() => generateGlobalSummary()}
+                  onClick={() => {
+                    if (!globalSummary) {
+                      generateGlobalSummary();
+                    } else {
+                      setActiveTab('summary');
+                    }
+                  }}
                   className={cn(
                     "px-6 py-2 rounded-xl text-sm font-bold transition-all duration-200",
                     activeTab === 'summary' ? "bg-white text-duo-yellow shadow-sm" : "text-duo-gray hover:text-duo-dark"
@@ -736,7 +744,13 @@ export default function App() {
                   筆記
                 </button>
                 <button 
-                  onClick={() => generateGlobalSummary()}
+                  onClick={() => {
+                    if (!globalSummary) {
+                      generateGlobalSummary();
+                    } else {
+                      setActiveTab('summary');
+                    }
+                  }}
                   className={cn(
                     "flex-shrink-0 px-6 py-2.5 rounded-xl text-sm font-bold transition-all",
                     activeTab === 'summary' ? "bg-white text-duo-yellow shadow-md" : "text-duo-gray"
@@ -1163,32 +1177,53 @@ export default function App() {
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
               className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white z-30 shadow-2xl flex flex-col border-l border-duo-border"
             >
-              <div className="p-8 border-b border-duo-border flex items-center justify-between bg-white">
-                <div className="flex flex-col">
-                  <h2 className="text-2xl font-extrabold flex items-center gap-3 font-display">
-                    <History className="w-6 h-6 text-duo-blue" /> 學習紀錄
-                  </h2>
-                  {history.length > 0 && (
+              <div className="p-8 border-b border-duo-border flex flex-col gap-6 bg-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <h2 className="text-2xl font-extrabold flex items-center gap-3 font-display">
+                      <History className="w-6 h-6 text-duo-blue" /> 學習紀錄
+                    </h2>
+                    {history.length > 0 && (
+                      <button 
+                        onClick={() => {
+                          if (confirm("確定要清除所有學習紀錄嗎？")) {
+                            setHistory([]);
+                            setCurrentAnalysis(null);
+                            setGlobalSummary(null);
+                          }
+                        }}
+                        className="text-[10px] font-black text-duo-red hover:underline flex items-center gap-1.5 mt-2 uppercase tracking-widest"
+                      >
+                        <Trash2 className="w-3 h-3" /> 清除全部紀錄
+                      </button>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => setShowHistory(false)}
+                    className="p-3 hover:bg-duo-light rounded-2xl transition-all"
+                  >
+                    <ChevronRight className="w-7 h-7" />
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-duo-gray" />
+                  <input 
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜尋標題或內容..."
+                    className="w-full bg-duo-light border-2 border-duo-border rounded-2xl pl-12 pr-10 py-3 text-sm font-bold focus:outline-none focus:border-duo-blue transition-all"
+                  />
+                  {searchQuery && (
                     <button 
-                      onClick={() => {
-                        if (confirm("確定要清除所有學習紀錄嗎？")) {
-                          setHistory([]);
-                          setCurrentAnalysis(null);
-                          setGlobalSummary(null);
-                        }
-                      }}
-                      className="text-[10px] font-black text-duo-red hover:underline flex items-center gap-1.5 mt-2 uppercase tracking-widest"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-duo-border/50 rounded-full transition-all"
                     >
-                      <Trash2 className="w-3 h-3" /> 清除全部紀錄
+                      <X className="w-4 h-4 text-duo-gray" />
                     </button>
                   )}
                 </div>
-                <button 
-                  onClick={() => setShowHistory(false)}
-                  className="p-3 hover:bg-duo-light rounded-2xl transition-all"
-                >
-                  <ChevronRight className="w-7 h-7" />
-                </button>
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar bg-duo-light/20">
@@ -1199,8 +1234,20 @@ export default function App() {
                     </div>
                     <p className="text-duo-gray font-bold">尚無學習紀錄</p>
                   </div>
+                ) : history.filter(item => 
+                    item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                    item.lessonText.toLowerCase().includes(searchQuery.toLowerCase())
+                  ).length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-10">
+                    <p className="text-duo-gray font-bold">找不到符合的結果</p>
+                  </div>
                 ) : (
-                  history.map((item) => (
+                  history
+                    .filter(item => 
+                      item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                      item.lessonText.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .map((item) => (
                     <motion.div
                       key={item.id}
                       initial={{ opacity: 0, x: 20 }}
@@ -1235,9 +1282,12 @@ export default function App() {
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          deleteHistoryItem(item.id);
+                          if (confirm(`確定要刪除「${item.title}」嗎？`)) {
+                            deleteHistoryItem(item.id);
+                          }
                         }}
-                        className="absolute -top-2 -right-2 w-8 h-8 bg-white border-2 border-duo-border text-duo-red rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg hover:bg-duo-red hover:text-white hover:border-duo-red z-10"
+                        className="absolute -top-2 -right-2 w-8 h-8 bg-white border-2 border-duo-border text-duo-red rounded-full flex items-center justify-center transition-all shadow-lg hover:bg-duo-red hover:text-white hover:border-duo-red z-10"
+                        title="刪除此紀錄"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
