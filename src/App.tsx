@@ -232,21 +232,68 @@ export default function App() {
   };
 
   const safeJsonParse = (str: string, fallback: any = []) => {
+    if (!str) return fallback;
+    
     try {
-      // Remove potential markdown code blocks
-      const cleaned = str.replace(/```json\n?/, '').replace(/```\n?$/, '').trim();
+      // 1. Try to find JSON content between markdown blocks or just the first { and last }
+      let jsonStr = str.trim();
+      
+      // Remove markdown code blocks if present
+      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      
+      const firstBrace = jsonStr.indexOf('{');
+      const firstBracket = jsonStr.indexOf('[');
+      const lastBrace = jsonStr.lastIndexOf('}');
+      const lastBracket = jsonStr.lastIndexOf(']');
+      
+      let start = -1;
+      let end = -1;
+      
+      if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+        start = firstBrace;
+        end = lastBrace;
+      } else if (firstBracket !== -1) {
+        start = firstBracket;
+        end = lastBracket;
+      }
+      
+      if (start !== -1 && end !== -1 && end > start) {
+        jsonStr = jsonStr.substring(start, end + 1);
+      }
+
+      // 2. Clean up common AI formatting issues
+      // Replace unescaped newlines in strings
+      const cleaned = jsonStr
+        .replace(/\n/g, " ") 
+        .replace(/\\n/g, "\\n")
+        .replace(/\\'/g, "'")
+        .trim();
+        
       return JSON.parse(cleaned);
     } catch (e) {
-      console.error("JSON Parse Error:", e, "Raw string:", str);
-      // Try to fix common issues like unescaped backslashes
+      console.warn("Standard JSON parse failed, attempting recovery...", e);
+      
       try {
-        const fixed = str
-          .replace(/\\([^"\\\/bfnrtu])/g, '$1') // Remove invalid backslash escapes
-          .replace(/```json\n?/, '')
-          .replace(/```\n?$/, '')
-          .trim();
-        return JSON.parse(fixed);
+        // More aggressive: strip everything that's not a valid JSON character or escape
+        let jsonStr = str.trim();
+        const start = Math.min(
+          jsonStr.indexOf('{') === -1 ? Infinity : jsonStr.indexOf('{'),
+          jsonStr.indexOf('[') === -1 ? Infinity : jsonStr.indexOf('[')
+        );
+        const end = Math.max(jsonStr.lastIndexOf('}'), jsonStr.lastIndexOf(']'));
+        
+        if (start !== Infinity && end !== -1 && end > start) {
+          jsonStr = jsonStr.substring(start, end + 1);
+        }
+        
+        // Remove control characters and fix common escape issues
+        const sanitized = jsonStr
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") 
+          .replace(/\\(?![bfnrtu"\\\/]|u[0-9a-fA-F]{4})/g, '');
+        
+        return JSON.parse(sanitized);
       } catch (e2) {
+        console.error("JSON Recovery failed:", e2);
         return fallback;
       }
     }
@@ -266,12 +313,15 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       const model = "gemini-3-flash-preview";
       
-      // Process in chunks of 5 to avoid payload limits
-      const CHUNK_SIZE = 5;
+      // Process in smaller chunks to avoid payload and complexity issues
+      const CHUNK_SIZE = 3;
       const allExtractedResults: any[] = [];
       const base64List: string[] = [];
 
       for (let i = 0; i < fileArray.length; i += CHUNK_SIZE) {
+        // Add a small delay to avoid rate limiting
+        if (i > 0) await new Promise(r => setTimeout(r, 500));
+        
         const chunk = fileArray.slice(i, i + CHUNK_SIZE);
         const chunkBase64: string[] = [];
         
@@ -292,16 +342,22 @@ export default function App() {
 
         const chunkPrompt = `
           你是一個專業的法文老師。這是來自 Duolingo 的學習截圖（第 ${Math.floor(i/CHUNK_SIZE) + 1} 批）。
-          請幫我精確提取這些圖片中的教學內容：
-          1. **課文與對話**：逐字提取所有法文句子，包含練習題中的題目與選項。
-          2. **生字與短語**：提取圖片中強調的單字、點擊翻譯的單字，並附上其在該語境下的解釋。
-          3. **語法線索**：觀察圖片中的語法現象（如：動詞變位、性數一致、時態等），並進行初步總結。
+          請幫我精確提取這些圖片中的教學內容。
           
-          請以 JSON 格式回傳：
+          **重要指令**：
+          - 請務必回傳純 JSON 格式，不要包含任何 Markdown 標籤或額外文字。
+          - 避免在字串中使用未轉義的反斜線 (\\)。
+          
+          請提取：
+          1. **課文與對話**：逐字提取所有法文句子。
+          2. **生字與短語**：提取單字及其解釋。
+          3. **語法線索**：簡短總結語法點。
+          
+          回傳格式：
           {
-            "lessonText": "提取的完整法文內容",
-            "vocabulary": ["單字 (詞性) - 解釋"],
-            "grammar": "初步語法觀察與解釋"
+            "lessonText": "法文內容",
+            "vocabulary": ["單字 - 解釋"],
+            "grammar": "簡短解釋"
           }
         `;
 
@@ -320,39 +376,28 @@ export default function App() {
       const existingUnitsInfo = history.map(h => `- ${h.title}`).join('\n');
 
       const consolidationPrompt = `
-        你是一個頂尖的法文教學專家。我剛剛分批提取了多張 Duolingo 截圖的內容，現在請你將這些內容整理成極具深度且系統化的學習單元。
+        你是一個頂尖的法文教學專家。請將以下多組提取到的 Duolingo 截圖內容整合為系統化的學習單元。
         
         提取到的原始數據：
         ${combinedData}
         
-        現有的單元列表：
-        ${existingUnitsInfo || "尚無現有單元"}
-        
         任務：
-        1. **深度知識整合**：將提取到的零散資訊整合為邏輯嚴密的教學單元。
-        2. **專業文法解析**：在 "grammar" 與 "fullMarkdown" 欄位中，提供深度的文法解釋。包含：
-           - 核心文法規則。
-           - 變位表或用法對照表（請務必使用 Markdown 表格）。
-           - 常見錯誤提醒。
-           - 課文中的具體例句分析。
-        3. **精確課文還原**：確保 "lessonText" 完整反映了截圖中的所有對話與句子。
+        1. **深度整合**：將相似主題的內容合併。
+        2. **專業解析**：提供詳細的文法解釋（包含 Markdown 表格）。
+        3. **格式要求**：務必回傳純 JSON 陣列，不要有 Markdown 區塊。
         
-        請以 JSON 陣列格式回傳：
+        回傳格式：
         [
           {
-            "title": "單元標題 (例如：單元 X - 主題名稱)",
-            "lessonText": "完整法文原文內容",
-            "vocabulary": ["單字 (詞性) - 中文解釋 - 例句"],
-            "grammar": "核心文法重點摘要",
-            "practicePrompt": "充滿鼓勵性的口語練習開場白",
-            "fullMarkdown": "# 學習筆記：[標題]\n\n## 📝 課文原文\n[原文]\n\n## 💡 文法深度解析\n[詳細解釋，包含表格、條列式重點]\n\n## 📚 重點單字與片語\n[清單]\n\n## ⚠️ 注意事項與常見錯誤\n[提醒]",
-            "mergeWithExistingTitle": "現有單元標題或留空"
+            "title": "單元標題",
+            "lessonText": "完整法文原文",
+            "vocabulary": ["單字 - 解釋 - 例句"],
+            "grammar": "核心文法摘要",
+            "practicePrompt": "口語練習開場白",
+            "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析\\n...",
+            "mergeWithExistingTitle": ""
           }
         ]
-        
-        注意：
-        - 筆記風格要像專業教材，排版要美觀（善用標題、粗體、表格）。
-        - 使用繁體中文解說，法文部分請附上中文翻譯。
       `;
 
       const finalResponse = await ai.models.generateContent({
