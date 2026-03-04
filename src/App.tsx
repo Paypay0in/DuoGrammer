@@ -3,6 +3,7 @@ import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, Sparkles, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -12,7 +13,7 @@ function cn(...inputs: ClassValue[]) {
 
 interface AnalysisResult {
   id: string;
-  image: string;
+  image?: string; // Optional to avoid retention
   title: string;
   explanation: string;
   lessonText: string;
@@ -51,6 +52,9 @@ export default function App() {
   const [isSlowMode, setIsSlowMode] = useState(false);
   const [globalSummary, setGlobalSummary] = useState<string | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [unitChatMessages, setUnitChatMessages] = useState<Record<string, ChatMessage[]>>({});
+  const [isUnitChatting, setIsUnitChatting] = useState<Record<string, boolean>>({});
+  const [unitInput, setUnitInput] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -247,7 +251,7 @@ export default function App() {
           
           const newResult: AnalysisResult = {
             id: existingIndex !== -1 ? newHistory[existingIndex].id : crypto.randomUUID(),
-            image: base64List[0], 
+            // image: base64List[0], // Removed to avoid retention
             title: res.title,
             explanation: res.fullMarkdown,
             lessonText: res.lessonText,
@@ -270,7 +274,7 @@ export default function App() {
         const firstRes = results[0];
         const displayResult: AnalysisResult = {
           id: crypto.randomUUID(),
-          image: base64List[0],
+          image: base64List[0], // Keep for current display
           title: firstRes.title,
           explanation: firstRes.fullMarkdown,
           lessonText: firstRes.lessonText,
@@ -280,7 +284,7 @@ export default function App() {
           timestamp: Date.now(),
         };
         setCurrentAnalysis(displayResult);
-        setImage(displayResult.image);
+        setImage(displayResult.image || null);
         setChatMessages([{ role: 'model', text: displayResult.practicePrompt }]);
         speakText(displayResult.practicePrompt);
       }
@@ -351,6 +355,66 @@ export default function App() {
     }
   };
 
+  const handleAskUnitQuestion = async (unit: AnalysisResult) => {
+    const question = unitInput[unit.id]?.trim();
+    if (!question) return;
+
+    const userMsg: ChatMessage = { role: 'user', text: question };
+    setUnitChatMessages(prev => ({
+      ...prev,
+      [unit.id]: [...(prev[unit.id] || []), userMsg]
+    }));
+    setUnitInput(prev => ({ ...prev, [unit.id]: '' }));
+    setIsUnitChatting(prev => ({ ...prev, [unit.id]: true }));
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const model = "gemini-3-flash-preview";
+
+      const history = unitChatMessages[unit.id] || [];
+      const chatHistory = history.map(m => ({
+        role: m.role,
+        parts: [{ text: m.text }]
+      }));
+
+      const systemInstruction = `
+        你是一個專業的法文老師。現在學生正在閱讀以下單元的文法筆記，並對內容有疑問：
+        單元標題：${unit.title}
+        課文內容：${unit.lessonText}
+        文法重點：${unit.grammar}
+        
+        請針對學生的問題進行詳細且易懂的解答。
+        1. 優先解釋該單元相關的知識。
+        2. 如果學生問到延伸問題，也可以適度擴展。
+        3. 使用繁體中文回答，法文範例請附上翻譯。
+        4. 語氣要鼓勵且專業。
+      `;
+
+      const response = await ai.models.generateContent({
+        model,
+        contents: [
+          ...chatHistory,
+          { role: 'user', parts: [{ text: question }] }
+        ],
+        config: {
+          systemInstruction: systemInstruction
+        }
+      });
+
+      const responseText = response.text || "抱歉，我暫時無法回答這個問題。";
+      const modelMsg: ChatMessage = { role: 'model', text: responseText };
+      setUnitChatMessages(prev => ({
+        ...prev,
+        [unit.id]: [...(prev[unit.id] || []), modelMsg]
+      }));
+      speakText(responseText);
+    } catch (error) {
+      console.error("Unit chat failed:", error);
+    } finally {
+      setIsUnitChatting(prev => ({ ...prev, [unit.id]: false }));
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     processFiles(e.target.files);
   };
@@ -365,7 +429,7 @@ export default function App() {
   };
 
   const selectHistoryItem = (item: AnalysisResult) => {
-    setImage(item.image);
+    setImage(item.image || null);
     setCurrentAnalysis(item);
     setChatMessages([{ role: 'model', text: item.practicePrompt }]);
     speakText(item.practicePrompt);
@@ -378,8 +442,15 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-duo-border px-4 py-4 sm:px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-duo-green rounded-2xl flex items-center justify-center shadow-lg shadow-duo-green/20">
+          <div 
+            onClick={() => {
+              setCurrentAnalysis(null);
+              setImage(null);
+              setActiveTab('study');
+            }}
+            className="flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-duo-green rounded-2xl flex items-center justify-center shadow-lg shadow-duo-green/20 group-hover:scale-110 transition-transform">
               <BookOpen className="text-white w-7 h-7" />
             </div>
             <div>
@@ -448,60 +519,64 @@ export default function App() {
           
           {/* Left Column: Upload & Image */}
           <div className="lg:col-span-4 space-y-8">
-            {!currentAnalysis ? (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={onDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={cn(
-                  "relative aspect-[9/16] max-h-[600px] w-full bg-white border-4 border-dashed border-duo-border rounded-[40px] flex flex-col items-center justify-center cursor-pointer transition-all hover:border-duo-blue group overflow-hidden shadow-sm hover:shadow-xl hover:shadow-duo-blue/5",
-                  image && "border-solid border-duo-blue"
-                )}
-              >
-                {image ? (
-                  <>
-                    <img src={image} alt="Duolingo Screenshot" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
-                    <div className="absolute inset-0 bg-duo-blue/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
-                      <div className="bg-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-2 transform translate-y-4 group-hover:translate-y-0 transition-transform">
-                        <Upload className="w-5 h-5 text-duo-blue" /> 
-                        <span className="font-bold text-duo-blue">更換圖片</span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center p-8">
-                    <div className="w-20 h-20 bg-duo-light rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 group-hover:bg-duo-blue/10 transition-all duration-500">
-                      <ImageIcon className="w-10 h-10 text-duo-gray group-hover:text-duo-blue transition-colors" />
-                    </div>
-                    <h3 className="font-extrabold text-xl mb-2 font-display">批次上傳截圖</h3>
-                    <p className="text-sm text-duo-gray font-medium">可一次選取多張圖片拖放或點擊</p>
-                    <div className="mt-8 px-6 py-3 bg-duo-blue text-white rounded-2xl font-bold shadow-lg shadow-duo-blue/20 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                      立即開始
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={cn(
+                "relative aspect-[9/16] max-h-[400px] w-full bg-white border-4 border-dashed border-duo-border rounded-[40px] flex flex-col items-center justify-center cursor-pointer transition-all hover:border-duo-blue group overflow-hidden shadow-sm hover:shadow-xl hover:shadow-duo-blue/5",
+                image && "border-solid border-duo-blue"
+              )}
+            >
+              {image ? (
+                <>
+                  <img src={image} alt="Duolingo Screenshot" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-duo-blue/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                    <div className="bg-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-2 transform translate-y-4 group-hover:translate-y-0 transition-transform">
+                      <Upload className="w-5 h-5 text-duo-blue" /> 
+                      <span className="font-bold text-duo-blue">更換圖片</span>
                     </div>
                   </div>
-                )}
-              </motion.div>
-            ) : (
+                </>
+              ) : (
+                <div className="text-center p-8">
+                  <div className="w-16 h-16 bg-duo-light rounded-3xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 group-hover:bg-duo-blue/10 transition-all duration-500">
+                    <ImageIcon className="w-8 h-8 text-duo-gray group-hover:text-duo-blue transition-colors" />
+                  </div>
+                  <h3 className="font-extrabold text-lg mb-1 font-display">上傳截圖</h3>
+                  <p className="text-xs text-duo-gray font-medium">拖放或點擊選取圖片</p>
+                </div>
+              )}
+            </motion.div>
+
+            {currentAnalysis && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className="duo-card p-6 border-duo-blue shadow-lg shadow-duo-blue/5 space-y-6"
               >
                 <div className="flex items-center gap-5">
-                  <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 border-2 border-duo-border bg-duo-light shadow-inner">
-                    <img src={currentAnalysis.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 border-2 border-duo-border bg-duo-light shadow-inner flex items-center justify-center">
+                    {currentAnalysis.image ? (
+                      <img src={currentAnalysis.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <ImageIcon className="w-8 h-8 text-duo-gray" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
+                    <button 
+                      onClick={() => {
+                        setCurrentAnalysis(null);
+                        setImage(null);
+                      }}
+                      className="text-[10px] font-black text-duo-gray hover:text-duo-blue uppercase tracking-widest flex items-center gap-1 mb-2 transition-colors"
+                    >
+                      <ChevronRight className="w-3 h-3 rotate-180" /> 返回主頁
+                    </button>
                     <h3 className="font-extrabold text-duo-dark truncate text-xl font-display">{currentAnalysis.title}</h3>
                     <p className="text-xs font-bold text-duo-gray mt-1">{new Date(currentAnalysis.timestamp).toLocaleString()}</p>
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-sm font-bold text-duo-blue mt-3 hover:text-duo-blue/80 flex items-center gap-1.5 transition-colors"
-                    >
-                      <Upload className="w-4 h-4" /> 繼續上傳新單元
-                    </button>
                   </div>
                 </div>
                 
@@ -516,6 +591,34 @@ export default function App() {
                   </div>
                 </div>
               </motion.div>
+            )}
+
+            {history.length > 0 && !currentAnalysis && (
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] px-2">學習卡片庫</h4>
+                <div className="grid grid-cols-1 gap-4">
+                  {history.map((item) => (
+                    <motion.button
+                      key={item.id}
+                      onClick={() => selectHistoryItem(item)}
+                      className="duo-card p-4 flex items-center gap-4 hover:border-duo-blue transition-all group text-left"
+                    >
+                      <div className="w-12 h-12 bg-duo-light rounded-xl flex items-center justify-center border border-duo-border overflow-hidden flex-shrink-0">
+                        {item.image ? (
+                          <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <ImageIcon className="w-5 h-5 text-duo-gray" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h5 className="font-bold text-sm truncate group-hover:text-duo-blue transition-colors">{item.title}</h5>
+                        <p className="text-[10px] text-duo-gray font-medium">{new Date(item.timestamp).toLocaleDateString()}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-duo-border group-hover:text-duo-blue" />
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
             )}
 
             <input 
@@ -630,6 +733,7 @@ export default function App() {
                   <div className="markdown-body prose prose-slate max-w-none prose-table:table-auto">
                     {globalSummary ? (
                       <Markdown
+                        remarkPlugins={[remarkGfm]}
                         components={{
                           table: ({node, ...props}) => (
                             <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white">
@@ -680,7 +784,11 @@ export default function App() {
                         >
                           <div className="flex items-center gap-6">
                             <div className="w-16 h-16 bg-duo-light rounded-2xl flex items-center justify-center border-2 border-duo-border overflow-hidden flex-shrink-0 shadow-inner group-hover:scale-105 transition-transform duration-300">
-                              <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              {item.image ? (
+                                <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <ImageIcon className="w-6 h-6 text-duo-gray" />
+                              )}
                             </div>
                             <div>
                               <h3 className="font-extrabold text-duo-dark text-xl font-display group-hover:text-duo-blue transition-colors">{item.title}</h3>
@@ -727,26 +835,81 @@ export default function App() {
                                   </div>
                                 )}
 
-                                <div className="markdown-body prose prose-slate max-w-none prose-table:table-auto">
-                                  <Markdown
-                                    components={{
-                                      table: ({node, ...props}) => (
-                                        <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white">
-                                          <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                  <div className="markdown-body prose prose-slate max-w-none prose-table:table-auto">
+                                    <Markdown
+                                      remarkPlugins={[remarkGfm]}
+                                      components={{
+                                        table: ({node, ...props}) => (
+                                          <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white">
+                                            <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                          </div>
+                                        ),
+                                        th: ({node, ...props}) => (
+                                          <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                        ),
+                                        td: ({node, ...props}) => (
+                                          <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                        )
+                                      }}
+                                    >
+                                      {item.explanation}
+                                    </Markdown>
+                                  </div>
+
+                                  {/* Unit Specific Q&A */}
+                                  <div className="mt-12 pt-10 border-t-2 border-duo-border/30">
+                                    <div className="flex items-center gap-3 mb-6">
+                                      <div className="w-10 h-10 bg-duo-blue/10 rounded-xl flex items-center justify-center">
+                                        <Sparkles className="w-5 h-5 text-duo-blue" />
+                                      </div>
+                                      <h4 className="font-extrabold text-lg font-display">針對此單元提問</h4>
+                                    </div>
+
+                                    <div className="space-y-4 mb-6">
+                                      {unitChatMessages[item.id]?.map((msg, idx) => (
+                                        <div key={idx} className={cn(
+                                          "flex flex-col",
+                                          msg.role === 'user' ? "items-end" : "items-start"
+                                        )}>
+                                          <div className={cn(
+                                            "max-w-[85%] p-4 rounded-2xl text-sm font-medium shadow-sm",
+                                            msg.role === 'user' 
+                                              ? "bg-duo-blue text-white rounded-tr-none" 
+                                              : "bg-white border border-duo-border text-duo-dark rounded-tl-none"
+                                          )}>
+                                            <div className={cn("markdown-body", msg.role === 'user' ? "text-white prose-invert" : "text-duo-dark")}>
+                                              <Markdown remarkPlugins={[remarkGfm]}>{msg.text}</Markdown>
+                                            </div>
+                                          </div>
                                         </div>
-                                      ),
-                                      th: ({node, ...props}) => (
-                                        <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
-                                      ),
-                                      td: ({node, ...props}) => (
-                                        <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
-                                      )
-                                    }}
-                                  >
-                                    {item.explanation}
-                                  </Markdown>
+                                      ))}
+                                      {isUnitChatting[item.id] && (
+                                        <div className="flex items-center gap-2 text-duo-gray">
+                                          <Loader2 className="w-4 h-4 animate-spin" />
+                                          <span className="text-xs font-bold">老師正在思考中...</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="relative">
+                                      <input 
+                                        type="text"
+                                        value={unitInput[item.id] || ''}
+                                        onChange={(e) => setUnitInput(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAskUnitQuestion(item)}
+                                        placeholder="對這個文法點有疑問嗎？直接問老師吧！"
+                                        className="w-full bg-white border-2 border-duo-border rounded-2xl py-4 pl-6 pr-14 font-bold text-sm focus:border-duo-blue focus:outline-none transition-all shadow-sm"
+                                      />
+                                      <button 
+                                        onClick={() => handleAskUnitQuestion(item)}
+                                        disabled={isUnitChatting[item.id] || !unitInput[item.id]?.trim()}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-duo-blue text-white rounded-xl shadow-md hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100"
+                                      >
+                                        <ChevronRight className="w-5 h-5" />
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
                             </motion.div>
                           )}
                         </AnimatePresence>
@@ -812,7 +975,9 @@ export default function App() {
                               ? "bg-duo-blue text-white rounded-tr-none shadow-lg shadow-duo-blue/20" 
                               : "bg-white text-duo-dark rounded-tl-none border-2 border-duo-border/50"
                           )}>
-                            <span className="leading-relaxed">{msg.text}</span>
+                            <div className={cn("markdown-body", msg.role === 'user' ? "text-white prose-invert" : "text-duo-dark")}>
+                              <Markdown remarkPlugins={[remarkGfm]}>{msg.text}</Markdown>
+                            </div>
                             {msg.role === 'model' && (
                               <button 
                                 onClick={() => speakText(msg.text, true)}
@@ -877,16 +1042,14 @@ export default function App() {
                   <div className="w-32 h-32 bg-duo-light rounded-[40px] flex items-center justify-center mb-10 shadow-inner group hover:scale-110 transition-transform duration-500">
                     <BookOpen className="w-16 h-16 text-duo-border group-hover:text-duo-blue transition-colors" />
                   </div>
-                  <h3 className="text-3xl font-extrabold mb-4 text-duo-dark font-display">開始你的專屬課程</h3>
+                  <h3 className="text-3xl font-extrabold mb-4 text-duo-dark font-display">
+                    {history.length > 0 ? "選擇一個單元開始學習" : "開始你的專屬課程"}
+                  </h3>
                   <p className="text-duo-gray max-w-sm mx-auto font-medium text-lg leading-relaxed">
-                    上傳 Duolingo 的課文截圖，我會為你整理成完整的學習單元，並陪你練習口語！
+                    {history.length > 0 
+                      ? "從左側選擇已上傳的單元，或繼續上傳新截圖來擴充你的知識庫。"
+                      : "上傳 Duolingo 的課文截圖，我會為你整理成完整的學習單元，並陪你練習口語！"}
                   </p>
-                  <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="mt-12 duo-button-primary px-10 py-4 text-lg"
-                  >
-                    立即上傳截圖
-                  </button>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -965,8 +1128,12 @@ export default function App() {
                             : "bg-white border-duo-border hover:border-duo-blue/40"
                         )}
                       >
-                        <div className="w-14 h-14 rounded-xl overflow-hidden border-2 border-duo-border flex-shrink-0 group-hover:scale-105 transition-transform">
-                          <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <div className="w-14 h-14 rounded-xl overflow-hidden border-2 border-duo-border flex-shrink-0 group-hover:scale-105 transition-transform flex items-center justify-center bg-duo-light">
+                          {item.image ? (
+                            <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <ImageIcon className="w-6 h-6 text-duo-gray" />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="font-extrabold text-duo-dark truncate font-display group-hover:text-duo-blue transition-colors">{item.title}</h4>
