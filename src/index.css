@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  
+  --color-duo-green: #58CC02;
+  --color-duo-blue: #1CB0F6;
+  --color-duo-yellow: #FFC800;
+  --color-duo-red: #FF4B4B;
+  --color-duo-gray: #AFAFAF;
+  --color-duo-dark: #4B4B4B;
+  --color-duo-light: #F7F7F7;
+  --color-duo-border: #E5E5E5;
+}
+
+@layer base {
+  body {
+    @apply antialiased text-duo-dark bg-duo-light font-sans;
+  }
+  
+  .markdown-body {
+    @apply text-duo-dark leading-relaxed;
+  }
+  .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+    @apply font-bold mt-8 mb-4 text-duo-blue font-display;
+  }
+  .markdown-body h1 { @apply text-3xl; }
+  .markdown-body h2 { @apply text-2xl border-b-2 border-duo-border/50 pb-2; }
+  .markdown-body h3 { @apply text-xl; }
+  .markdown-body p { @apply mb-4 text-base; }
+  .markdown-body ul, .markdown-body ol { @apply mb-6 pl-6; }
+  .markdown-body ul { @apply list-disc; }
+  .markdown-body ol { @apply list-decimal; }
+  .markdown-body li { @apply mb-2; }
+  .markdown-body strong { @apply text-duo-green font-bold; }
+  .markdown-body code { @apply bg-duo-border/30 px-1.5 py-0.5 rounded text-duo-red font-mono text-sm; }
+  .markdown-body blockquote { @apply border-l-4 border-duo-border pl-4 italic text-duo-gray my-6; }
+  
+  /* Table Styles */
+  .markdown-body table {
+    @apply w-full border-collapse my-8 overflow-hidden rounded-3xl border-2 border-duo-border shadow-sm;
+  }
+  .markdown-body thead {
+    @apply bg-duo-light;
+  }
+  .markdown-body th {
+    @apply p-5 text-left text-xs font-bold text-duo-gray uppercase tracking-widest border-b-2 border-duo-border;
+  }
+  .markdown-body td {
+    @apply p-5 text-sm text-duo-dark border-b border-duo-border bg-white;
+  }
+  .markdown-body tr:last-child td {
+    @apply border-b-0;
+  }
+  .markdown-body tr:hover td {
+    @apply bg-duo-light/50;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .duo-card {
+    @apply bg-white border-2 border-duo-border rounded-[32px] transition-all duration-300;
+  }
+  
+  .duo-button-primary {
+    @apply bg-duo-blue text-white font-bold py-3 px-6 rounded-2xl shadow-[0_4px_0_#1899D6] active:shadow-none active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0;
+  }
+  
+  .duo-button-secondary {
+    @apply bg-white border-2 border-duo-border text-duo-gray font-bold py-3 px-6 rounded-2xl hover:bg-duo-light transition-all active:translate-y-0.5;
+  }
+  
+  .duo-button-green {
+    @apply bg-duo-green text-white font-bold py-3 px-6 rounded-2xl shadow-[0_4px_0_#46A302] active:shadow-none active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0;
+  }
+}
