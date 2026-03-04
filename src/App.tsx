@@ -299,6 +299,52 @@ export default function App() {
     }
   };
 
+  const updateHistoryWithResults = (results: any[], firstImage: string) => {
+    setHistory(prev => {
+      let newHistory = [...prev];
+      results.forEach((res: any) => {
+        const existingIndex = newHistory.findIndex(h => h.title === res.mergeWithExistingTitle);
+        
+        const newResult: AnalysisResult = {
+          id: existingIndex !== -1 ? newHistory[existingIndex].id : crypto.randomUUID(),
+          title: res.title,
+          explanation: res.fullMarkdown,
+          lessonText: res.lessonText,
+          vocabulary: res.vocabulary,
+          grammar: res.grammar,
+          practicePrompt: res.practicePrompt,
+          timestamp: Date.now(),
+        };
+
+        if (existingIndex !== -1) {
+          newHistory[existingIndex] = newResult;
+        } else {
+          newHistory = [newResult, ...newHistory];
+        }
+      });
+      return newHistory;
+    });
+
+    if (results.length > 0) {
+      const firstRes = results[0];
+      const displayResult: AnalysisResult = {
+        id: crypto.randomUUID(),
+        image: firstImage,
+        title: firstRes.title,
+        explanation: firstRes.fullMarkdown,
+        lessonText: firstRes.lessonText,
+        vocabulary: firstRes.vocabulary,
+        grammar: firstRes.grammar,
+        practicePrompt: firstRes.practicePrompt,
+        timestamp: Date.now(),
+      };
+      setCurrentAnalysis(displayResult);
+      setImage(displayResult.image || null);
+      setChatMessages([{ role: 'model', text: displayResult.practicePrompt }]);
+      speakText(displayResult.practicePrompt);
+    }
+  };
+
   const processFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
@@ -327,26 +373,82 @@ export default function App() {
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      const model = "gemini-3-flash-preview";
       
-      // Process in slightly larger chunks to reduce total request count (staying under rate limits)
-      const CHUNK_SIZE = 5;
+      // Use gemini-2.5-flash for extraction as it might have different quota limits
+      const extractionModel = "gemini-2.5-flash";
+      const consolidationModel = "gemini-3-flash-preview";
+      
       const allExtractedResults: any[] = [];
       const base64List: string[] = [];
 
+      // If 5 or fewer images, do it in ONE SINGLE PASS to save API calls
+      if (fileArray.length <= 5) {
+        const chunkBase64: string[] = [];
+        for (let j = 0; j < fileArray.length; j++) {
+          setAnalysisProgress({ current: j + 1, total: fileArray.length + 1 });
+          const resized = await resizeImage(fileArray[j]);
+          chunkBase64.push(resized);
+          if (j === 0) base64List.push(resized);
+        }
+
+        const imageParts = chunkBase64.map(base64 => ({
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: base64.split(',')[1],
+          },
+        }));
+
+        const singlePassPrompt = `
+          你是一個頂尖的法文教學專家。請分析這些 Duolingo 截圖並直接整理成一個系統化的學習單元。
+          
+          任務：
+          1. **精確提取**：提取所有對話、生字與語法點。
+          2. **專業解析**：提供詳細的文法解釋（包含 Markdown 表格）。
+          3. **格式要求**：務必回傳純 JSON 陣列，不要有 Markdown 區塊。
+          
+          回傳格式：
+          [
+            {
+              "title": "單元標題",
+              "lessonText": "完整法文原文",
+              "vocabulary": ["單字 - 解釋 - 例句"],
+              "grammar": "核心文法摘要",
+              "practicePrompt": "口語練習開場白",
+              "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析\\n...",
+              "mergeWithExistingTitle": ""
+            }
+          ]
+        `;
+
+        const response = await callWithRetry(() => ai.models.generateContent({
+          model: consolidationModel,
+          contents: { parts: [...imageParts, { text: singlePassPrompt }] },
+          config: { responseMimeType: "application/json" }
+        }));
+
+        setAnalysisProgress({ current: fileArray.length + 1, total: fileArray.length + 1 });
+        const results = safeJsonParse(response.text || "[]", []);
+        
+        if (results.length > 0) {
+          updateHistoryWithResults(results, base64List[0]);
+        }
+        return;
+      }
+
+      // For larger batches, use chunking
+      const CHUNK_SIZE = 5;
       for (let i = 0; i < fileArray.length; i += CHUNK_SIZE) {
-        // Add a longer delay to avoid rate limiting
-        if (i > 0) await new Promise(r => setTimeout(r, 3000));
+        if (i > 0) await new Promise(r => setTimeout(r, 4000));
         
         const chunk = fileArray.slice(i, i + CHUNK_SIZE);
         const chunkBase64: string[] = [];
         
         for (let j = 0; j < chunk.length; j++) {
           const currentIdx = i + j;
-          setAnalysisProgress({ current: currentIdx + 1, total: fileArray.length });
+          setAnalysisProgress({ current: currentIdx + 1, total: fileArray.length + 1 });
           const resized = await resizeImage(chunk[j]);
           chunkBase64.push(resized);
-          if (i === 0 && j === 0) base64List.push(resized); // Keep first image for display
+          if (i === 0 && j === 0) base64List.push(resized);
         }
 
         const imageParts = chunkBase64.map(base64 => ({
@@ -357,19 +459,10 @@ export default function App() {
         }));
 
         const chunkPrompt = `
-          你是一個專業的法文老師。這是來自 Duolingo 的學習截圖（第 ${Math.floor(i/CHUNK_SIZE) + 1} 批）。
-          請幫我精確提取這些圖片中的教學內容。
+          你是一個專業的法文老師。請精確提取這些圖片中的教學內容。
+          務必回傳純 JSON 格式。
           
-          **重要指令**：
-          - 請務必回傳純 JSON 格式，不要包含任何 Markdown 標籤或額外文字。
-          - 避免在字串中使用未轉義的反斜線 (\\)。
-          
-          請提取：
-          1. **課文與對話**：逐字提取所有法文句子。
-          2. **生字與短語**：提取單字及其解釋。
-          3. **語法線索**：簡短總結語法點。
-          
-          回傳格式：
+          格式：
           {
             "lessonText": "法文內容",
             "vocabulary": ["單字 - 解釋"],
@@ -378,7 +471,7 @@ export default function App() {
         `;
 
         const response = await callWithRetry(() => ai.models.generateContent({
-          model,
+          model: extractionModel,
           contents: { parts: [...imageParts, { text: chunkPrompt }] },
           config: { responseMimeType: "application/json" }
         }));
@@ -391,15 +484,10 @@ export default function App() {
       const combinedData = JSON.stringify(allExtractedResults);
       
       const consolidationPrompt = `
-        你是一個頂尖的法文教學專家。請將以下多組提取到的 Duolingo 截圖內容整合為系統化的學習單元。
+        你是一個頂尖的法文教學專家。請將以下多組提取到的內容整合為系統化的學習單元。
+        務必回傳純 JSON 陣列。
         
-        提取到的原始數據：
-        ${combinedData}
-        
-        任務：
-        1. **深度整合**：將相似主題的內容合併。
-        2. **專業解析**：提供詳細的文法解釋（包含 Markdown 表格）。
-        3. **格式要求**：務必回傳純 JSON 陣列，不要有 Markdown 區塊。
+        數據：${combinedData}
         
         回傳格式：
         [
@@ -416,57 +504,14 @@ export default function App() {
       `;
 
       const finalResponse = await callWithRetry(() => ai.models.generateContent({
-        model,
+        model: consolidationModel,
         contents: [{ parts: [{ text: consolidationPrompt }] }],
         config: { responseMimeType: "application/json" }
       }));
 
       setAnalysisProgress({ current: fileArray.length + 1, total: fileArray.length + 1 });
       const results = safeJsonParse(finalResponse.text || "[]", []);
-      
-      setHistory(prev => {
-        let newHistory = [...prev];
-        results.forEach((res: any) => {
-          const existingIndex = newHistory.findIndex(h => h.title === res.mergeWithExistingTitle);
-          
-          const newResult: AnalysisResult = {
-            id: existingIndex !== -1 ? newHistory[existingIndex].id : crypto.randomUUID(),
-            title: res.title,
-            explanation: res.fullMarkdown,
-            lessonText: res.lessonText,
-            vocabulary: res.vocabulary,
-            grammar: res.grammar,
-            practicePrompt: res.practicePrompt,
-            timestamp: Date.now(),
-          };
-
-          if (existingIndex !== -1) {
-            newHistory[existingIndex] = newResult;
-          } else {
-            newHistory = [newResult, ...newHistory];
-          }
-        });
-        return newHistory;
-      });
-
-      if (results.length > 0) {
-        const firstRes = results[0];
-        const displayResult: AnalysisResult = {
-          id: crypto.randomUUID(),
-          image: base64List[0],
-          title: firstRes.title,
-          explanation: firstRes.fullMarkdown,
-          lessonText: firstRes.lessonText,
-          vocabulary: firstRes.vocabulary,
-          grammar: firstRes.grammar,
-          practicePrompt: firstRes.practicePrompt,
-          timestamp: Date.now(),
-        };
-        setCurrentAnalysis(displayResult);
-        setImage(displayResult.image || null);
-        setChatMessages([{ role: 'model', text: displayResult.practicePrompt }]);
-        speakText(displayResult.practicePrompt);
-      }
+      updateHistoryWithResults(results, base64List[0]);
 
     } catch (error: any) {
       console.error("Batch analysis failed:", error);
