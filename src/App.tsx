@@ -309,14 +309,18 @@ export default function App() {
     setAnalysisProgress({ current: 0, total: fileArray.length });
     setActiveTab('study');
 
-    const callWithRetry = async (fn: () => Promise<any>, retries = 3, delay = 2000) => {
+    const callWithRetry = async (fn: () => Promise<any>, retries = 4, delay = 3000) => {
       for (let i = 0; i < retries; i++) {
         try {
           return await fn();
-        } catch (err) {
+        } catch (err: any) {
+          const isRateLimit = err?.message?.includes('429') || err?.status === 429 || err?.message?.includes('quota');
           if (i === retries - 1) throw err;
-          console.warn(`API call failed, retrying (${i + 1}/${retries})...`, err);
-          await new Promise(r => setTimeout(r, delay * (i + 1)));
+          
+          // If it's a rate limit error, wait significantly longer
+          const waitTime = isRateLimit ? (i + 1) * 10000 : delay * (i + 1);
+          console.warn(`API call failed (${isRateLimit ? 'Rate Limit' : 'Error'}), retrying in ${waitTime}ms (${i + 1}/${retries})...`, err);
+          await new Promise(r => setTimeout(r, waitTime));
         }
       }
     };
@@ -325,14 +329,14 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       const model = "gemini-3-flash-preview";
       
-      // Process in smaller chunks to avoid payload and complexity issues
-      const CHUNK_SIZE = 3;
+      // Process in slightly larger chunks to reduce total request count (staying under rate limits)
+      const CHUNK_SIZE = 5;
       const allExtractedResults: any[] = [];
       const base64List: string[] = [];
 
       for (let i = 0; i < fileArray.length; i += CHUNK_SIZE) {
-        // Add a delay to avoid rate limiting
-        if (i > 0) await new Promise(r => setTimeout(r, 2000));
+        // Add a longer delay to avoid rate limiting
+        if (i > 0) await new Promise(r => setTimeout(r, 3000));
         
         const chunk = fileArray.slice(i, i + CHUNK_SIZE);
         const chunkBase64: string[] = [];
@@ -466,8 +470,14 @@ export default function App() {
 
     } catch (error: any) {
       console.error("Batch analysis failed:", error);
-      const errorMsg = error?.message || "未知錯誤";
-      alert(`分析失敗：${errorMsg}\n\n這可能是因為一次上傳過多圖片（建議每次 5-10 張）或網路不穩定。請嘗試分次上傳。`);
+      const isRateLimit = error?.message?.includes('429') || error?.status === 429 || error?.message?.includes('quota');
+      
+      if (isRateLimit) {
+        alert("分析失敗：觸發了 AI 的使用頻率限制 (Rate Limit)。\n\n這通常是因為短時間內上傳了過多圖片。請等待約 1 分鐘後再試，或嘗試減少單次上傳的圖片數量。");
+      } else {
+        const errorMsg = error?.message || "未知錯誤";
+        alert(`分析失敗：${errorMsg}\n\n這可能是因為網路不穩定。請嘗試分次上傳。`);
+      }
     } finally {
       setIsAnalyzing(false);
       setAnalysisProgress(null);
