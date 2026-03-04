@@ -83,4 +83,25 @@
   .duo-button-green {
     @apply bg-duo-green text-white font-bold py-3 px-6 rounded-2xl shadow-[0_4px_0_#46A302] active:shadow-none active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0;
   }
+  
+  .duo-button-blue {
+    @apply bg-duo-blue text-white font-bold py-3 px-6 rounded-2xl shadow-[0_4px_0_#1899D6] active:shadow-none active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0;
+  }
+
+  .duo-button-yellow {
+    @apply bg-duo-yellow text-white font-bold py-3 px-6 rounded-2xl shadow-[0_4px_0_#E5A500] active:shadow-none active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0;
+  }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+  .backface-hidden {
+    backface-visibility: hidden;
+  }
+  .rotate-y-180 {
+    transform: rotateY(180deg);
+  }
 }

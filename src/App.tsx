@@ -36,10 +36,18 @@ interface WorksheetQuestion {
   correctAnswer: string;
 }
 
+interface Flashcard {
+  french: string;
+  meaning: string;
+  conjugation?: string;
+  example: string;
+}
+
 interface GlobalSummaryData {
   content: string;
   timestamp: number;
   worksheet: WorksheetQuestion[];
+  flashcards?: Flashcard[];
   userAnswers?: string[];
   feedback?: string;
   score?: number;
@@ -68,7 +76,7 @@ export default function App() {
     }
   });
   const [showHistory, setShowHistory] = useState(false);
-  const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary'>('study');
+  const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary' | 'flashcards'>('study');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatting, setIsChatting] = useState(false);
   const [userInput, setUserInput] = useState('');
@@ -89,6 +97,8 @@ export default function App() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
+  const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
+  const [isCardFlipped, setIsCardFlipped] = useState(false);
   const [worksheetAnswers, setWorksheetAnswers] = useState<string[]>([]);
   const [worksheetHistory, setWorksheetHistory] = useState<any[]>(() => {
     const saved = localStorage.getItem('duo_worksheet_history');
@@ -231,7 +241,7 @@ export default function App() {
         你是一個頂尖的法文教學專家，專門輔導學生通過 TCF Canada 考試。
         學生目前已經學習了多個 Duolingo 單元，目標是將這些基礎知識轉化為 TCF Canada 考試所需的實戰能力。
         
-        請幫學生將以下所有單元的知識進行「深度系統化統整」，並出一份「TCF Canada 模擬練習學習單」。
+        請幫學生將以下所有單元的知識進行「深度系統化統整」，並出一份「TCF Canada 模擬練習學習單」以及「動詞/核心單字閃卡」。
         
         ${historyContext}
 
@@ -250,6 +260,9 @@ export default function App() {
            - 題目設計必須參考 TCF Canada 的題型（例如：Structure de la langue 語法結構、Compréhension écrite 閱讀理解）。
            - 難度應涵蓋 A1 到 B2（視學習內容而定）。
            - 每題包含 "question" (題目), "type" (multiple-choice, fill-in-the-blank, translation), "options" (如果是選擇題), "correctAnswer" (正確答案)。
+        3. "flashcards": 包含 10-15 張動詞或核心單字的閃卡陣列。
+           要求：
+           - 每張閃卡包含 "french" (法文單字/動詞), "meaning" (中文意思), "conjugation" (如果是動詞，請提供現在時主要人稱變位，否則留空), "example" (一個實用的法文例句)。
         
         注意：
         - 筆記要包含產出時間：${new Date().toLocaleString()}。
@@ -277,14 +290,27 @@ export default function App() {
                   },
                   required: ["question", "type", "correctAnswer"]
                 }
+              },
+              flashcards: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    french: { type: Type.STRING },
+                    meaning: { type: Type.STRING },
+                    conjugation: { type: Type.STRING },
+                    example: { type: Type.STRING }
+                  },
+                  required: ["french", "meaning", "example"]
+                }
               }
             },
-            required: ["content", "worksheet"]
+            required: ["content", "worksheet", "flashcards"]
           }
         }
       });
 
-      const data = safeJsonParse(response.text || "{}", { content: "", worksheet: [] });
+      const data = safeJsonParse(response.text || "{}", { content: "", worksheet: [], flashcards: [] });
       
       if (!data.content || !Array.isArray(data.worksheet)) {
         throw new Error("AI 回傳格式不正確，無法生成總結。");
@@ -293,9 +319,12 @@ export default function App() {
       setGlobalSummary({
         content: data.content,
         timestamp: Date.now(),
-        worksheet: data.worksheet
+        worksheet: data.worksheet,
+        flashcards: data.flashcards
       });
       setWorksheetAnswers(new Array(data.worksheet.length).fill(''));
+      setCurrentFlashcardIndex(0);
+      setIsCardFlipped(false);
     } catch (error) {
       console.error("Summary generation failed:", error);
       alert("生成總結時發生錯誤，請稍後再試。");
@@ -328,6 +357,7 @@ export default function App() {
         1. 總分 (0-100)。
         2. 每題的詳細批改建議與解析，並指出該題對應的 TCF Canada 考點。
         3. 針對 TCF Canada 考試的整體學習建議與弱點加強方案。
+        4. 如果學生有動詞變位或單字錯誤，請在建議中明確提到可以使用「動詞閃卡」功能進行專項練習。
         
         請回傳 JSON 格式：
         {
@@ -913,6 +943,21 @@ export default function App() {
                 >
                   綜合口語練習
                 </button>
+                <button 
+                  onClick={() => {
+                    if (!globalSummary) {
+                      generateGlobalSummary();
+                    } else {
+                      setActiveTab('flashcards');
+                    }
+                  }}
+                  className={cn(
+                    "px-6 py-2 rounded-xl text-sm font-bold transition-all duration-200",
+                    activeTab === 'flashcards' ? "bg-white text-duo-red shadow-sm" : "text-duo-gray hover:text-duo-dark"
+                  )}
+                >
+                  動詞閃卡
+                </button>
               </div>
             )}
             <button 
@@ -1058,6 +1103,21 @@ export default function App() {
                   )}
                 >
                   對話
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!globalSummary) {
+                      generateGlobalSummary();
+                    } else {
+                      setActiveTab('flashcards');
+                    }
+                  }}
+                  className={cn(
+                    "flex-shrink-0 px-6 py-2.5 rounded-xl text-sm font-bold transition-all",
+                    activeTab === 'flashcards' ? "bg-white text-duo-red shadow-md" : "text-duo-gray"
+                  )}
+                >
+                  閃卡
                 </button>
               </div>
             )}
@@ -1365,6 +1425,137 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                </motion.div>
+              ) : activeTab === 'flashcards' ? (
+                <motion.div 
+                  key="flashcards"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="duo-card p-8 sm:p-12 shadow-xl shadow-duo-red/5 min-h-[600px] flex flex-col"
+                >
+                  <div className="flex items-center justify-between mb-10 pb-6 border-b-2 border-duo-border/50">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-duo-red rounded-2xl flex items-center justify-center shadow-lg shadow-duo-red/20">
+                        <BookOpen className="text-white w-7 h-7" />
+                      </div>
+                      <div>
+                        <h2 className="text-3xl font-extrabold text-duo-dark font-display">動詞/核心單字閃卡</h2>
+                        <p className="text-sm font-bold text-duo-gray">點擊卡片翻面，練習法文動詞變位與意思</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-black text-duo-gray uppercase tracking-widest">進度</p>
+                      <p className="text-lg font-black text-duo-red">
+                        {globalSummary?.flashcards ? currentFlashcardIndex + 1 : 0} / {globalSummary?.flashcards?.length || 0}
+                      </p>
+                    </div>
+                  </div>
+
+                  {globalSummary?.flashcards && globalSummary.flashcards.length > 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-12 py-10">
+                      <div 
+                        className="relative w-full max-w-[500px] aspect-[4/3] perspective-1000 cursor-pointer group"
+                        onClick={() => setIsCardFlipped(!isCardFlipped)}
+                      >
+                        <motion.div
+                          animate={{ rotateY: isCardFlipped ? 180 : 0 }}
+                          transition={{ duration: 0.6, type: "spring", stiffness: 260, damping: 20 }}
+                          className="w-full h-full relative preserve-3d"
+                        >
+                          {/* Front */}
+                          <div className="absolute inset-0 backface-hidden bg-white border-4 border-duo-border rounded-[40px] flex flex-col items-center justify-center p-10 shadow-xl group-hover:shadow-2xl transition-shadow">
+                            <span className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] mb-6">法文單字 / 動詞</span>
+                            <h3 className="text-5xl sm:text-6xl font-black text-duo-dark text-center leading-tight">
+                              {globalSummary.flashcards[currentFlashcardIndex].french}
+                            </h3>
+                            <div className="mt-10 flex items-center gap-3 text-duo-blue">
+                              <Volume2 className="w-6 h-6" onClick={(e) => {
+                                e.stopPropagation();
+                                speakText(globalSummary.flashcards[currentFlashcardIndex].french);
+                              }} />
+                              <span className="text-sm font-bold">點擊翻面查看解釋</span>
+                            </div>
+                          </div>
+
+                          {/* Back */}
+                          <div className="absolute inset-0 backface-hidden bg-duo-light border-4 border-duo-blue/30 rounded-[40px] flex flex-col items-center justify-center p-10 shadow-xl rotate-y-180">
+                            <div className="w-full space-y-6 text-center">
+                              <div>
+                                <span className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] block mb-2">中文意思</span>
+                                <p className="text-3xl font-black text-duo-dark">
+                                  {globalSummary.flashcards[currentFlashcardIndex].meaning}
+                                </p>
+                              </div>
+                              
+                              {globalSummary.flashcards[currentFlashcardIndex].conjugation && (
+                                <div className="bg-white/50 p-4 rounded-2xl border border-duo-border">
+                                  <span className="text-xs font-black text-duo-blue uppercase tracking-[0.2em] block mb-2">動詞變位 (現在時)</span>
+                                  <p className="text-sm font-bold text-duo-dark whitespace-pre-line leading-relaxed">
+                                    {globalSummary.flashcards[currentFlashcardIndex].conjugation}
+                                  </p>
+                                </div>
+                              )}
+
+                              <div>
+                                <span className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] block mb-2">實用例句</span>
+                                <p className="text-base font-bold text-duo-dark italic">
+                                  "{globalSummary.flashcards[currentFlashcardIndex].example}"
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      </div>
+
+                      <div className="flex items-center gap-6">
+                        <button
+                          onClick={() => {
+                            setIsCardFlipped(false);
+                            setCurrentFlashcardIndex(prev => Math.max(0, prev - 1));
+                          }}
+                          disabled={currentFlashcardIndex === 0}
+                          className="w-16 h-16 rounded-2xl bg-white border-2 border-duo-border flex items-center justify-center text-duo-gray hover:text-duo-blue hover:border-duo-blue transition-all disabled:opacity-30"
+                        >
+                          <ChevronRight className="w-8 h-8 rotate-180" />
+                        </button>
+                        
+                        <button
+                          onClick={() => setIsCardFlipped(!isCardFlipped)}
+                          className="px-10 py-4 rounded-2xl bg-duo-blue text-white font-black uppercase tracking-widest shadow-lg shadow-duo-blue/20 hover:scale-105 transition-all"
+                        >
+                          翻轉卡片
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsCardFlipped(false);
+                            setCurrentFlashcardIndex(prev => Math.min(globalSummary.flashcards!.length - 1, prev + 1));
+                          }}
+                          disabled={currentFlashcardIndex === globalSummary.flashcards.length - 1}
+                          className="w-16 h-16 rounded-2xl bg-white border-2 border-duo-border flex items-center justify-center text-duo-gray hover:text-duo-blue hover:border-duo-blue transition-all disabled:opacity-30"
+                        >
+                          <ChevronRight className="w-8 h-8" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
+                      <div className="w-20 h-20 bg-duo-light rounded-full flex items-center justify-center mb-6">
+                        <BookOpen className="w-10 h-10 text-duo-border" />
+                      </div>
+                      <h3 className="text-xl font-black text-duo-dark mb-2">尚未生成閃卡</h3>
+                      <p className="text-duo-gray font-bold max-w-md">
+                        請先點擊「知識庫統整」來生成包含閃卡的複習內容。
+                      </p>
+                      <button 
+                        onClick={generateGlobalSummary}
+                        className="mt-8 duo-button-yellow px-8 py-3"
+                      >
+                        立即生成統整
+                      </button>
+                    </div>
+                  )}
                 </motion.div>
               ) : history.length > 0 ? (
                 activeTab === 'study' ? (
