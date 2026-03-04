@@ -60,7 +60,12 @@ export default function App() {
   const [currentAnalysis, setCurrentAnalysis] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<AnalysisResult[]>(() => {
     const saved = localStorage.getItem('duo_grammar_history');
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return [];
+    }
   });
   const [showHistory, setShowHistory] = useState(false);
   const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary'>('study');
@@ -72,18 +77,35 @@ export default function App() {
   const [isSlowMode, setIsSlowMode] = useState(false);
   const [globalSummary, setGlobalSummary] = useState<GlobalSummaryData | null>(() => {
     const saved = localStorage.getItem('duo_grammar_summary_v2');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved);
+      if (!parsed.content || !parsed.worksheet) return null;
+      return parsed;
+    } catch (e) {
+      return null;
+    }
   });
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [worksheetAnswers, setWorksheetAnswers] = useState<string[]>([]);
   const [worksheetHistory, setWorksheetHistory] = useState<any[]>(() => {
     const saved = localStorage.getItem('duo_worksheet_history');
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return [];
+    }
   });
   const [unitChatMessages, setUnitChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
     const saved = localStorage.getItem('duo_grammar_unit_chats');
-    return saved ? JSON.parse(saved) : {};
+    if (!saved) return {};
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return {};
+    }
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [isUnitChatting, setIsUnitChatting] = useState<Record<string, boolean>>({});
@@ -201,7 +223,7 @@ export default function App() {
       ).join('\n\n---\n\n');
 
       const historyContext = worksheetHistory.length > 0 
-        ? `學生之前的學習單表現：\n${worksheetHistory.map(h => `- 分數: ${h.score}/100, 反饋: ${h.feedback}`).join('\n')}\n請特別針對學生之前答錯或不熟悉的觀念進行加強。`
+        ? `學生之前的學習單表現：\n${worksheetHistory.filter(h => h && h.score !== undefined).map(h => `- 分數: ${h.score}/100, 反饋: ${h.feedback}`).join('\n')}\n請特別針對學生之前答錯或不熟悉的觀念進行加強。`
         : "";
 
       const prompt = `
@@ -261,7 +283,12 @@ export default function App() {
         }
       });
 
-      const data = JSON.parse(response.text || "{}");
+      const data = safeJsonParse(response.text || "{}", { content: "", worksheet: [] });
+      
+      if (!data.content || !Array.isArray(data.worksheet)) {
+        throw new Error("AI 回傳格式不正確，無法生成總結。");
+      }
+
       setGlobalSummary({
         content: data.content,
         timestamp: Date.now(),
@@ -277,7 +304,7 @@ export default function App() {
   };
 
   const gradeWorksheet = async () => {
-    if (!globalSummary || worksheetAnswers.some(a => !a.trim())) {
+    if (!globalSummary || !globalSummary.worksheet || worksheetAnswers.some(a => !a.trim())) {
       alert("請完成所有題目後再送出。");
       return;
     }
@@ -291,7 +318,7 @@ export default function App() {
         你是一個資深的 TCF Canada 考官與法文老師。請批改學生的學習單。
         
         題目與正確答案：
-        ${globalSummary.worksheet.map((q, i) => `${i+1}. ${q.question}\n正確答案: ${q.correctAnswer}`).join('\n')}
+        ${globalSummary.worksheet.filter(q => q && q.question).map((q, i) => `${i+1}. ${q.question}\n正確答案: ${q.correctAnswer}`).join('\n')}
         
         學生的回答：
         ${worksheetAnswers.map((a, i) => `${i+1}. ${a}`).join('\n')}
@@ -1125,7 +1152,7 @@ export default function App() {
                               )
                             }}
                           >
-                            {globalSummary.content}
+                            {globalSummary.content || ""}
                           </Markdown>
                         </div>
 
@@ -1150,7 +1177,7 @@ export default function App() {
                           </div>
 
                           <div className="space-y-8">
-                            {globalSummary.worksheet.map((q, idx) => (
+                            {globalSummary.worksheet && Array.isArray(globalSummary.worksheet) && globalSummary.worksheet.map((q, idx) => (
                               <div key={idx} className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-duo-border shadow-sm">
                                 <div className="flex items-start gap-3 sm:gap-4 mb-6">
                                   <span className="w-8 h-8 sm:w-10 sm:h-10 bg-duo-light rounded-xl flex items-center justify-center font-black text-duo-gray flex-shrink-0 text-sm sm:text-base">
@@ -1266,7 +1293,7 @@ export default function App() {
                                       )
                                     }}
                                   >
-                                    {globalSummary.feedback}
+                                    {globalSummary.feedback || ""}
                                   </Markdown>
                                 </div>
                                 <div className="mt-10 pt-8 border-t-2 border-duo-border/50 flex flex-col sm:flex-row items-center justify-between gap-6">
@@ -1415,7 +1442,7 @@ export default function App() {
                                               : "bg-white border border-duo-border text-duo-dark rounded-tl-none"
                                           )}>
                                             <div className={cn("markdown-body", msg.role === 'user' ? "text-white prose-invert" : "text-duo-dark")}>
-                                              <Markdown remarkPlugins={[remarkGfm]}>{msg.text}</Markdown>
+                                              <Markdown remarkPlugins={[remarkGfm]}>{msg.text || ""}</Markdown>
                                             </div>
                                           </div>
                                         </div>
