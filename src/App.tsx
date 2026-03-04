@@ -1237,20 +1237,35 @@ export default function App() {
                             <motion.div
                               initial={{ opacity: 0, y: 20 }}
                               animate={{ opacity: 1, y: 0 }}
-                              className="mt-16 bg-white rounded-[40px] p-10 border-4 border-duo-green/30 shadow-2xl shadow-duo-green/5 relative overflow-hidden"
+                              className="mt-16 bg-white rounded-[40px] p-6 sm:p-10 border-4 border-duo-green/30 shadow-2xl shadow-duo-green/5 relative overflow-hidden"
                             >
                               <div className="absolute top-0 right-0 p-8 opacity-10">
                                 <CheckCircle2 className="w-32 h-32 text-duo-green" />
                               </div>
                               <div className="relative z-10">
                                 <div className="flex items-center gap-4 mb-8">
-                                  <div className="w-14 h-14 bg-duo-green rounded-2xl flex items-center justify-center">
-                                    <Sparkles className="text-white w-8 h-8" />
+                                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-duo-green rounded-2xl flex items-center justify-center">
+                                    <Sparkles className="text-white w-6 h-6 sm:w-8 sm:h-8" />
                                   </div>
-                                  <h4 className="text-3xl font-extrabold text-duo-dark font-display">老師的批改與建議</h4>
+                                  <h4 className="text-2xl sm:text-3xl font-extrabold text-duo-dark font-display">老師的批改與建議</h4>
                                 </div>
                                 <div className="markdown-body">
-                                  <Markdown remarkPlugins={[remarkGfm]}>
+                                  <Markdown 
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                      table: ({node, ...props}) => (
+                                        <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
+                                          <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                        </div>
+                                      ),
+                                      th: ({node, ...props}) => (
+                                        <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                      ),
+                                      td: ({node, ...props}) => (
+                                        <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                      )
+                                    }}
+                                  >
                                     {globalSummary.feedback}
                                   </Markdown>
                                 </div>
