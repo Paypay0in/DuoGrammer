@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -131,33 +131,61 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isUnitChatting, setIsUnitChatting] = useState<Record<string, boolean>>({});
   const [unitInput, setUnitInput] = useState<Record<string, string>>({});
+  const [showToast, setShowToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
+  const safeLocalStorageSet = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.error(`LocalStorage save failed for key "${key}":`, e);
+      if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+        // If quota exceeded, try to clear some old history
+        if (key === 'duo_grammar_history') {
+          const history = JSON.parse(value);
+          if (history.length > 5) {
+            const trimmed = history.slice(0, 5);
+            localStorage.setItem(key, JSON.stringify(trimmed));
+            return;
+          }
+        }
+        if (key === 'duo_summary_history_v1') {
+          const history = JSON.parse(value);
+          if (history.length > 3) {
+            const trimmed = history.slice(0, 3);
+            localStorage.setItem(key, JSON.stringify(trimmed));
+            return;
+          }
+        }
+      }
+    }
+  };
+
   // Persistence
   useEffect(() => {
-    localStorage.setItem('duo_grammar_history', JSON.stringify(history));
+    safeLocalStorageSet('duo_grammar_history', JSON.stringify(history.slice(0, 20)));
   }, [history]);
 
   useEffect(() => {
-    localStorage.setItem('duo_grammar_unit_chats', JSON.stringify(unitChatMessages));
+    safeLocalStorageSet('duo_grammar_unit_chats', JSON.stringify(unitChatMessages));
   }, [unitChatMessages]);
 
   useEffect(() => {
     if (globalSummary) {
-      localStorage.setItem('duo_grammar_summary_v2', JSON.stringify(globalSummary));
+      safeLocalStorageSet('duo_grammar_summary_v2', JSON.stringify(globalSummary));
     } else {
       localStorage.removeItem('duo_grammar_summary_v2');
     }
   }, [globalSummary]);
 
   useEffect(() => {
-    localStorage.setItem('duo_worksheet_history', JSON.stringify(worksheetHistory));
+    safeLocalStorageSet('duo_worksheet_history', JSON.stringify(worksheetHistory.slice(0, 20)));
   }, [worksheetHistory]);
 
   useEffect(() => {
-    localStorage.setItem('duo_summary_history_v1', JSON.stringify(summaryHistory));
+    safeLocalStorageSet('duo_summary_history_v1', JSON.stringify(summaryHistory.slice(0, 10)));
   }, [summaryHistory]);
 
   const scrollToBottom = () => {
@@ -167,6 +195,13 @@ export default function App() {
   useEffect(() => {
     scrollToBottom();
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (showToast) {
+      const timer = setTimeout(() => setShowToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showToast]);
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -234,7 +269,7 @@ export default function App() {
 
   const generateGlobalSummary = async () => {
     if (history.length === 0) return;
-    setGlobalSummary(null);
+    // Don't clear globalSummary immediately, keep the old one until new one is ready
     setWorksheetAnswers([]);
     setIsGeneratingSummary(true);
     setActiveTab('summary');
@@ -427,7 +462,7 @@ export default function App() {
     }
   };
 
-  const resizeImage = (file: File, maxWidth = 640, maxHeight = 640): Promise<string> => {
+  const resizeImage = (file: File, maxWidth = 400, maxHeight = 400): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -1217,6 +1252,19 @@ export default function App() {
                       <RefreshCw className={cn("w-4 h-4", isGeneratingSummary && "animate-spin")} />
                       重新整理
                     </button>
+                    <button 
+                      onClick={() => {
+                        if (globalSummary) {
+                          safeLocalStorageSet('duo_grammar_summary_v2', JSON.stringify(globalSummary));
+                          safeLocalStorageSet('duo_summary_history_v1', JSON.stringify(summaryHistory.slice(0, 10)));
+                          setShowToast("總結筆記已成功儲存！");
+                        }
+                      }}
+                      className="text-sm font-bold text-duo-green hover:text-duo-green/80 transition-colors bg-duo-green/5 px-4 py-2 rounded-xl flex items-center gap-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      手動儲存
+                    </button>
                     {summaryHistory.length > 0 && (
                       <div className="flex items-center gap-2 bg-duo-light p-1.5 rounded-xl border border-duo-border">
                         <History className="w-3.5 h-3.5 text-duo-gray ml-1" />
@@ -1942,18 +1990,29 @@ export default function App() {
                       <History className="w-6 h-6 text-duo-blue" /> 學習紀錄
                     </h2>
                     {history.length > 0 && (
-                      <button 
-                        onClick={() => {
-                          if (confirm("確定要清除所有學習紀錄嗎？")) {
-                            setHistory([]);
-                            setCurrentAnalysis(null);
-                            setGlobalSummary(null);
-                          }
-                        }}
-                        className="text-[10px] font-black text-duo-red hover:underline flex items-center gap-1.5 mt-2 uppercase tracking-widest"
-                      >
-                        <Trash2 className="w-3 h-3" /> 清除全部紀錄
-                      </button>
+                      <div className="flex items-center gap-4 mt-2">
+                        <button 
+                          onClick={() => {
+                            if (confirm("確定要清除所有學習紀錄嗎？")) {
+                              setHistory([]);
+                              setCurrentAnalysis(null);
+                              setGlobalSummary(null);
+                            }
+                          }}
+                          className="text-[10px] font-black text-duo-red hover:underline flex items-center gap-1.5 uppercase tracking-widest"
+                        >
+                          <Trash2 className="w-3 h-3" /> 清除全部
+                        </button>
+                        <button 
+                          onClick={() => {
+                            safeLocalStorageSet('duo_grammar_history', JSON.stringify(history.slice(0, 20)));
+                            setShowToast("學習紀錄已成功儲存！");
+                          }}
+                          className="text-[10px] font-black text-duo-green hover:underline flex items-center gap-1.5 uppercase tracking-widest"
+                        >
+                          <Save className="w-3 h-3" /> 手動儲存
+                        </button>
+                      </div>
                     )}
                   </div>
                   <button 
@@ -2068,6 +2127,20 @@ export default function App() {
           <span className="text-lg">上傳截圖</span>
         </button>
       </footer>
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-10 left-1/2 z-50 bg-duo-dark text-white px-8 py-4 rounded-2xl shadow-2xl font-bold flex items-center gap-3 border border-white/10"
+          >
+            <CheckCircle2 className="w-5 h-5 text-duo-green" />
+            {showToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
