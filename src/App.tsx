@@ -22,6 +22,7 @@ interface AnalysisResult {
   grammar: string;
   practicePrompt: string;
   timestamp: number;
+  duoLocation?: string; // Manual input for Duolingo chapter/section
 }
 
 interface ChatMessage {
@@ -76,6 +77,17 @@ export default function App() {
     }
   });
   const [showHistory, setShowHistory] = useState(false);
+
+  const updateUnitLocation = (id: string, location: string) => {
+    setHistory(prev => {
+      const newHistory = prev.map(item => item.id === id ? { ...item, duoLocation: location } : item);
+      safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+      return newHistory;
+    });
+    if (currentAnalysis?.id === id) {
+      setCurrentAnalysis(prev => prev ? { ...prev, duoLocation: location } : null);
+    }
+  };
   const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary' | 'flashcards'>('study');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatting, setIsChatting] = useState(false);
@@ -301,8 +313,11 @@ export default function App() {
         1. "content": 深度系統化複習筆記（Markdown 格式）。
            要求：
            - 內容必須豐富詳盡，不能過於簡略。
-           - 包含「核心文法表格」、「高頻單字與 TCF 常考語境」、「易混淆點深度解析」。
-           - 增加「TCF Canada 備考建議」章節，針對目前學習的內容提供考試技巧。
+           - 必須包含以下明確章節：
+             - 「💡 核心文法詳解 (Grammar Explanations)」：深入淺出解釋文法規則，並附上對比表格。
+             - 「📚 高頻單字與語境 (Vocabulary & Context)」：整理重點單字，每個單字必須附帶一個實用的法文例句與中文翻譯，並說明在 TCF Canada 考試中的常見用法。
+             - 「⚠️ 常見錯誤與易混淆點 (Common Errors)」：列出學生容易犯錯的地方，並提供正確範例。
+             - 「🎯 TCF Canada 備考建議」：針對目前學習的內容提供實戰考試技巧。
            - 使用豐富的 Markdown 格式（粗體、列表、引用、表格）。
         2. "worksheet": 包含 8 題練習題的陣列。
            要求：
@@ -676,10 +691,10 @@ export default function App() {
             {
               "title": "單元標題",
               "lessonText": "完整法文原文",
-              "vocabulary": ["單字 - 解釋 - 例句"],
+              "vocabulary": ["單字 - 解釋 - 例句 (必須包含完整法文例句與中文翻譯)"],
               "grammar": "核心文法摘要",
               "practicePrompt": "口語練習開場白",
-              "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析\\n...",
+              "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析 (Grammar)\\n...\\n\\n## 📚 重點單字 (Vocabulary)\\n...\\n\\n## ⚠️ 常見錯誤 (Common Errors)\\n...",
               "mergeWithExistingTitle": ""
             }
           ]
@@ -730,7 +745,7 @@ export default function App() {
           格式：
           {
             "lessonText": "法文內容",
-            "vocabulary": ["單字 - 解釋"],
+            "vocabulary": ["單字 - 解釋 - 實用法文例句"],
             "grammar": "簡短解釋"
           }
         `;
@@ -759,10 +774,10 @@ export default function App() {
           {
             "title": "單元標題",
             "lessonText": "完整法文原文",
-            "vocabulary": ["單字 - 解釋 - 例句"],
+            "vocabulary": ["單字 - 解釋 - 例句 (必須包含完整法文例句與中文翻譯)"],
             "grammar": "核心文法摘要",
             "practicePrompt": "口語練習開場白",
-            "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析\\n...",
+            "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析 (Grammar)\\n...\\n\\n## 📚 重點單字 (Vocabulary)\\n...\\n\\n## ⚠️ 常見錯誤 (Common Errors)\\n...",
             "mergeWithExistingTitle": ""
           }
         ]
@@ -1094,10 +1109,24 @@ export default function App() {
                       <span className="px-2 py-0.5 bg-duo-blue/10 text-duo-blue text-[10px] font-black rounded-md uppercase tracking-wider">Active Unit</span>
                     </div>
                     <h3 className="font-black text-duo-dark truncate text-xl font-display leading-tight">{currentAnalysis.title}</h3>
-                    <p className="text-[10px] font-bold text-duo-gray mt-1 uppercase tracking-widest flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3 text-duo-yellow" />
-                      提取於 {new Date(currentAnalysis.timestamp).toLocaleDateString()}
-                    </p>
+                    <div className="mt-2 flex flex-col gap-2">
+                      <div className="relative group/input">
+                        <input 
+                          type="text"
+                          placeholder="輸入章節 (如: 第1章 第5節)"
+                          value={currentAnalysis.duoLocation || ''}
+                          onChange={(e) => updateUnitLocation(currentAnalysis.id, e.target.value)}
+                          className="w-full bg-duo-light/50 border-2 border-duo-border/50 rounded-lg px-3 py-1.5 text-xs font-bold text-duo-dark focus:border-duo-blue/50 focus:bg-white transition-all outline-none placeholder:text-duo-gray/50"
+                        />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                          <Search className="w-3 h-3 text-duo-gray/30 group-focus-within/input:text-duo-blue/50" />
+                        </div>
+                      </div>
+                      <p className="text-[10px] font-bold text-duo-gray uppercase tracking-widest flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-duo-yellow" />
+                        提取於 {new Date(currentAnalysis.timestamp).toLocaleDateString()}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 
@@ -2053,7 +2082,8 @@ export default function App() {
                   </div>
                 ) : history.filter(item => 
                     item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                    item.lessonText.toLowerCase().includes(searchQuery.toLowerCase())
+                    item.lessonText.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    (item.duoLocation && item.duoLocation.toLowerCase().includes(searchQuery.toLowerCase()))
                   ).length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-10">
                     <p className="text-duo-gray font-bold">找不到符合的結果</p>
@@ -2062,7 +2092,8 @@ export default function App() {
                   history
                     .filter(item => 
                       item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                      item.lessonText.toLowerCase().includes(searchQuery.toLowerCase())
+                      item.lessonText.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      (item.duoLocation && item.duoLocation.toLowerCase().includes(searchQuery.toLowerCase()))
                     )
                     .map((item) => (
                     <motion.div
@@ -2089,7 +2120,14 @@ export default function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="font-extrabold text-duo-dark truncate font-display group-hover:text-duo-blue transition-colors">{item.title}</h4>
-                          <p className="text-[10px] font-bold text-duo-gray mt-1 uppercase tracking-wider">{new Date(item.timestamp).toLocaleString()}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {item.duoLocation && (
+                              <span className="px-1.5 py-0.5 bg-duo-green/10 text-duo-green text-[9px] font-black rounded uppercase tracking-wider">
+                                {item.duoLocation}
+                              </span>
+                            )}
+                            <p className="text-[10px] font-bold text-duo-gray uppercase tracking-wider">{new Date(item.timestamp).toLocaleString()}</p>
+                          </div>
                         </div>
                         <ChevronRight className={cn(
                           "w-5 h-5 transition-all",
