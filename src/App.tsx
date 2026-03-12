@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Type } from "@google/genai";
+import { supabase } from './lib/supabase';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -144,9 +145,71 @@ export default function App() {
   const [isUnitChatting, setIsUnitChatting] = useState<Record<string, boolean>>({});
   const [unitInput, setUnitInput] = useState<Record<string, string>>({});
   const [showToast, setShowToast] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Load from Supabase on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const userId = 'default_user';
+        const { data, error } = await supabase
+          .from('duo_grammar_data')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows found"
+        
+        if (data) {
+          if (data.history && history.length === 0) {
+            setHistory(data.history);
+          }
+          if (data.summary && !globalSummary) {
+            setGlobalSummary(data.summary);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading from Supabase:', error);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Sync to Supabase
+  useEffect(() => {
+    const syncData = async () => {
+      if (history.length === 0 && !globalSummary) return;
+      
+      setSyncStatus('syncing');
+      try {
+        // Since we don't have auth yet, we use a generic 'default_user'
+        // In a real app, you'd use supabase.auth.user().id
+        const userId = 'default_user';
+        
+        const { error: historyError } = await supabase
+          .from('duo_grammar_data')
+          .upsert({ 
+            id: userId, 
+            history: history,
+            summary: globalSummary,
+            updated_at: new Date().toISOString()
+          });
+
+        if (historyError) throw historyError;
+        setSyncStatus('success');
+        setTimeout(() => setSyncStatus('idle'), 3000);
+      } catch (error) {
+        console.error('Supabase sync error:', error);
+        setSyncStatus('error');
+      }
+    };
+
+    const timeoutId = setTimeout(syncData, 2000); // Debounce sync
+    return () => clearTimeout(timeoutId);
+  }, [history, globalSummary]);
 
   const safeLocalStorageSet = (key: string, value: string) => {
     try {
@@ -966,7 +1029,22 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-2xl font-extrabold text-duo-blue tracking-tight font-display">DuoGrammar</h1>
-              <p className="text-[10px] uppercase tracking-[0.2em] font-black text-duo-gray">Companion Pro</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] uppercase tracking-[0.2em] font-black text-duo-gray">Companion Pro</p>
+                {syncStatus !== 'idle' && (
+                  <div className={cn(
+                    "flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider transition-all",
+                    syncStatus === 'syncing' && "bg-duo-blue/10 text-duo-blue animate-pulse",
+                    syncStatus === 'success' && "bg-duo-green/10 text-duo-green",
+                    syncStatus === 'error' && "bg-duo-red/10 text-duo-red"
+                  )}>
+                    {syncStatus === 'syncing' && <Loader2 className="w-2 h-2 animate-spin" />}
+                    {syncStatus === 'success' && <CheckCircle2 className="w-2 h-2" />}
+                    {syncStatus === 'error' && <AlertCircle className="w-2 h-2" />}
+                    {syncStatus === 'syncing' ? 'Syncing...' : syncStatus === 'success' ? 'Synced' : 'Sync Error'}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-6">
