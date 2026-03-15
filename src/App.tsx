@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw, PenLine } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw, PenLine, Pencil, Eraser } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import CanvasDraw from 'react-canvas-draw';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Type } from "@google/genai";
@@ -140,7 +141,14 @@ export default function App() {
   const [isSlowMode, setIsSlowMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [isDrawingEnabled, setIsDrawingEnabled] = useState(false);
+  const [penColor, setPenColor] = useState("#1cb0f6");
+  const [brushRadius, setBrushRadius] = useState(2);
+  const [canvasHeight, setCanvasHeight] = useState(400);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+
   const [globalSummary, setGlobalSummary] = useState<GlobalSummaryData | null>(() => {
     const saved = localStorage.getItem('duo_grammar_summary_v2');
     if (!saved) return null;
@@ -152,6 +160,47 @@ export default function App() {
       return null;
     }
   });
+
+  const [savedDrawings, setSavedDrawings] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('duo_grammar_drawings');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const saveDrawing = () => {
+    if (canvasRef.current && globalSummary) {
+      const data = canvasRef.current.getSaveData();
+      const newDrawings = { ...savedDrawings, [globalSummary.timestamp]: data };
+      setSavedDrawings(newDrawings);
+      localStorage.setItem('duo_grammar_drawings', JSON.stringify(newDrawings));
+    }
+  };
+
+  useEffect(() => {
+    if (isDrawingEnabled && canvasRef.current && globalSummary && savedDrawings[globalSummary.timestamp]) {
+      // Small delay to ensure canvas is ready
+      setTimeout(() => {
+        canvasRef.current.loadSaveData(savedDrawings[globalSummary.timestamp], true);
+      }, 100);
+    }
+  }, [isDrawingEnabled, globalSummary?.timestamp]);
+
+  const toggleDrawing = () => {
+    if (isDrawingEnabled) {
+      saveDrawing();
+    }
+    setIsDrawingEnabled(!isDrawingEnabled);
+  };
+
+  useEffect(() => {
+    if (!contentRef.current) return;
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setCanvasHeight(entry.target.scrollHeight);
+      }
+    });
+    resizeObserver.observe(contentRef.current);
+    return () => resizeObserver.disconnect();
+  }, [globalSummary]);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [dailyStory, setDailyStory] = useState<DailyStory | null>(() => {
@@ -1772,10 +1821,29 @@ export default function App() {
                             className="w-full px-8 py-6 flex items-center justify-between hover:bg-duo-light/50 transition-colors group"
                           >
                             <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-duo-border group-hover:border-duo-blue/30 transition-colors">
-                                <BookOpen className="w-5 h-5 text-duo-blue" />
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-duo-border group-hover:border-duo-blue/30 transition-colors">
+                                  <BookOpen className="w-5 h-5 text-duo-blue" />
+                                </div>
+                                <span className="text-xl font-extrabold text-duo-dark font-display">系統化筆記內容</span>
                               </div>
-                              <span className="text-xl font-extrabold text-duo-dark font-display">系統化筆記內容</span>
+                              
+                              {/* New Prominent Handwriting Button */}
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleDrawing();
+                                }}
+                                className={cn(
+                                  "ml-4 flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all shadow-sm border-2 z-30",
+                                  isDrawingEnabled 
+                                    ? "bg-duo-blue text-white border-duo-blue" 
+                                    : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
+                                )}
+                              >
+                                {isDrawingEnabled ? <Save className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                                {isDrawingEnabled ? "儲存筆記" : "手寫筆記"}
+                              </button>
                             </div>
                             <div className={cn("transition-transform duration-300", !isSummaryExpanded && "rotate-180")}>
                               <ChevronUp className="w-6 h-6 text-duo-gray" />
@@ -1788,25 +1856,113 @@ export default function App() {
                             className="overflow-hidden"
                           >
                             <div className="p-4 sm:p-8 pt-0 border-t-2 border-duo-border/30">
-                              <div className="markdown-body mt-6">
-                                <Markdown
-                                  remarkPlugins={[remarkGfm]}
-                                  components={{
-                                    table: (props) => (
-                                      <div className="w-full overflow-x-auto my-6 border-2 border-duo-border rounded-2xl shadow-sm bg-white no-scrollbar">
-                                        <table className="w-full border-collapse min-w-[500px]" {...props} />
-                                      </div>
-                                    ),
-                                    th: (props) => (
-                                      <th className="p-3 sm:p-5 text-left text-[10px] sm:text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
-                                    ),
-                                    td: (props) => (
-                                      <td className="p-3 sm:p-5 text-xs sm:text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
-                                    )
-                                  }}
-                                >
-                                  {globalSummary.content}
-                                </Markdown>
+                              <div className="relative mt-6 min-h-[400px]">
+                                {/* Drawing Toolbar */}
+                                {isDrawingEnabled && (
+                                  <div className="absolute top-0 right-0 z-20 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
+                                    <button 
+                                      onClick={() => setPenColor("#1cb0f6")}
+                                      className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" ? "border-duo-dark scale-110" : "border-transparent")}
+                                      style={{ backgroundColor: "#1cb0f6" }}
+                                    />
+                                    <button 
+                                      onClick={() => setPenColor("#ff4b4b")}
+                                      className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" ? "border-duo-dark scale-110" : "border-transparent")}
+                                      style={{ backgroundColor: "#ff4b4b" }}
+                                    />
+                                    <button 
+                                      onClick={() => setPenColor("#58cc02")}
+                                      className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" ? "border-duo-dark scale-110" : "border-transparent")}
+                                      style={{ backgroundColor: "#58cc02" }}
+                                    />
+                                    <button 
+                                      onClick={() => setPenColor("transparent")}
+                                      className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
+                                      title="橡皮擦"
+                                    >
+                                      <Eraser className="w-5 h-5" />
+                                    </button>
+                                    <div className="w-full h-0.5 bg-duo-border my-1" />
+                                    <div className="flex flex-col items-center gap-1 py-1">
+                                      <span className="text-[8px] font-black text-duo-gray">粗細</span>
+                                      <input 
+                                        type="range" 
+                                        min="1" 
+                                        max="10" 
+                                        value={brushRadius} 
+                                        onChange={(e) => setBrushRadius(parseInt(e.target.value))}
+                                        className="w-12 h-1 bg-duo-border rounded-lg appearance-none cursor-pointer accent-duo-blue"
+                                      />
+                                    </div>
+                                    <div className="w-full h-0.5 bg-duo-border my-1" />
+                                    <button 
+                                      onClick={() => canvasRef.current?.undo()}
+                                      className="p-2 hover:bg-duo-light rounded-xl text-duo-gray transition-all"
+                                      title="復原"
+                                    >
+                                      <History className="w-5 h-5" />
+                                    </button>
+                                    <button 
+                                      onClick={() => canvasRef.current?.clear()}
+                                      className="p-2 hover:bg-duo-red/10 text-duo-red rounded-xl transition-all"
+                                      title="清除全部"
+                                    >
+                                      <Trash2 className="w-5 h-5" />
+                                    </button>
+                                  </div>
+                                )}
+
+                                {isDrawingEnabled && (
+                                  <div className="absolute -top-6 left-0 z-20 flex items-center gap-2 px-4 py-2 bg-duo-blue/10 text-duo-blue rounded-xl text-[10px] font-bold animate-pulse">
+                                    <Sparkles className="w-3 h-3" />
+                                    支援 Apple Pencil 繪圖中...
+                                  </div>
+                                )}
+
+                                <div ref={contentRef} className="markdown-body relative z-10">
+                                  <Markdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                      table: (props) => (
+                                        <div className="w-full overflow-x-auto my-6 border-2 border-duo-border rounded-2xl shadow-sm bg-white no-scrollbar">
+                                          <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                        </div>
+                                      ),
+                                      th: (props) => (
+                                        <th className="p-3 sm:p-5 text-left text-[10px] sm:text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                      ),
+                                      td: (props) => (
+                                        <td className="p-3 sm:p-5 text-xs sm:text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                      )
+                                    }}
+                                  >
+                                    {globalSummary.content}
+                                  </Markdown>
+                                </div>
+
+                                {isDrawingEnabled && (
+                                  <div className="absolute inset-0 z-20 pointer-events-auto">
+                                    <CanvasDraw
+                                      ref={canvasRef}
+                                      brushColor={penColor === "transparent" ? "#ffffff" : penColor}
+                                      brushRadius={brushRadius}
+                                      lazyRadius={0}
+                                      canvasWidth="100%"
+                                      canvasHeight={canvasHeight}
+                                      backgroundColor="transparent"
+                                      hideGrid
+                                      className="handwriting-canvas"
+                                      style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        background: 'transparent'
+                                      }}
+                                    />
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </motion.div>

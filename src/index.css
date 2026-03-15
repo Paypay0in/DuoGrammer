@@ -105,4 +105,12 @@
   .rotate-y-180 {
     transform: rotateY(180deg);
   }
+
+  .handwriting-canvas canvas {
+    cursor: crosshair !important;
+  }
+
+  .handwriting-canvas {
+    touch-action: none !important;
+  }
 }
