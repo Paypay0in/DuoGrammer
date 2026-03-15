@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw, PenLine } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -53,6 +53,15 @@ interface GlobalSummaryData {
   userAnswers?: string[];
   feedback?: string;
   score?: number;
+}
+
+interface DailyStory {
+  title: string;
+  story: string;
+  translation: string;
+  vocabulary: { word: string; meaning: string }[];
+  sentencePractice: { prompt: string; answer: string; hint: string }[];
+  timestamp: number;
 }
 
 // Extend Window interface for SpeechRecognition
@@ -122,7 +131,7 @@ export default function App() {
       setCurrentAnalysis(prev => prev ? { ...prev, duoLocation: location } : null);
     }
   };
-  const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary' | 'flashcards'>('study');
+  const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary' | 'flashcards' | 'daily'>('study');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatting, setIsChatting] = useState(false);
   const [userInput, setUserInput] = useState('');
@@ -142,6 +151,18 @@ export default function App() {
   });
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
+  const [dailyStory, setDailyStory] = useState<DailyStory | null>(() => {
+    const saved = localStorage.getItem('duo_daily_story');
+    if (!saved) return null;
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return null;
+    }
+  });
+  const [isGeneratingDaily, setIsGeneratingDaily] = useState(false);
+  const [dailyAnswers, setDailyAnswers] = useState<string[]>([]);
+  const [dailyFeedback, setDailyFeedback] = useState<{ [key: number]: string }>({});
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
   const [isWorksheetExpanded, setIsWorksheetExpanded] = useState(true);
   const [summaryHistory, setSummaryHistory] = useState<GlobalSummaryData[]>(() => {
@@ -347,28 +368,57 @@ export default function App() {
     }
   };
 
-  const speakText = (text: string, force = false) => {
+  const speakText = async (text: string, force = false) => {
     if (!isAutoSpeak && !force) return;
     
     console.log("Speaking text:", text.substring(0, 50));
     
+    // Attempt Gemini TTS for higher quality
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      
+      // Prompt for emotion and speed
+      const speedInstruction = isSlowMode ? "Speak very slowly and clearly." : "Speak at a natural, slightly relaxed pace.";
+      const prompt = `${speedInstruction} Speak with a warm, friendly, and encouraging tone. Text to speak: ${text}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore is often a good warm voice
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const audioSrc = `data:audio/mp3;base64,${base64Audio}`;
+        const audio = new Audio(audioSrc);
+        audio.play();
+        return;
+      }
+    } catch (error) {
+      console.warn("Gemini TTS failed, falling back to browser speech:", error);
+    }
+
+    // Fallback to browser TTS
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'fr-FR';
-      utterance.rate = isSlowMode ? 0.6 : 0.95; 
+      utterance.rate = isSlowMode ? 0.5 : 0.85; // Even slower based on user feedback
       utterance.pitch = 1.0;
       
-      // Try to find a nice French voice
       const voices = window.speechSynthesis.getVoices();
       const frenchVoice = voices.find(v => v.lang.startsWith('fr') && v.name.includes('Google')) 
                         || voices.find(v => v.lang.startsWith('fr'))
                         || voices[0];
       
-      if (frenchVoice) {
-        utterance.voice = frenchVoice;
-      }
-      
+      if (frenchVoice) utterance.voice = frenchVoice;
       window.speechSynthesis.speak(utterance);
     } catch (error) {
       console.error("Speech synthesis failed:", error);
@@ -493,6 +543,146 @@ export default function App() {
       alert("生成總結時發生錯誤，請稍後再試。");
     } finally {
       setIsGeneratingSummary(false);
+    }
+  };
+
+  const generateDailyStory = async () => {
+    if (history.length === 0) {
+      setShowToast("請先上傳一些單元內容再生成短文");
+      return;
+    }
+    setIsGeneratingDaily(true);
+    setActiveTab('daily');
+    setDailyFeedback({});
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const model = "gemini-3-flash-preview";
+
+      const allVocab = Array.from(new Set(history.flatMap(item => item.vocabulary))).join(', ');
+      const allGrammar = history.map(item => item.grammar).join('; ');
+
+      const prompt = `
+        你是一個專業的法文老師。請根據學生目前學過的單字和文法，編寫一篇約 100 字的法文短文。
+        
+        學生學過的單字：${allVocab}
+        學生學過的文法：${allGrammar}
+        
+        要求：
+        1. 短文內容要有趣且生活化。
+        2. 盡量使用學生學過的單字。
+        3. 提供短文的中文翻譯。
+        4. 從短文中挑選 5 個重點單字進行複習。
+        5. 設計 3 題造句練習，讓學生練習運用短文中的句型。
+        
+        請回傳 JSON 格式：
+        {
+          "title": "短文標題",
+          "story": "法文短文內容",
+          "translation": "中文翻譯",
+          "vocabulary": [{"word": "單字", "meaning": "意思"}],
+          "sentencePractice": [{"prompt": "造句提示(中文)", "answer": "參考答案(法文)", "hint": "提示(法文關鍵字)"}]
+        }
+      `;
+
+      const response = await ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              story: { type: Type.STRING },
+              translation: { type: Type.STRING },
+              vocabulary: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    word: { type: Type.STRING },
+                    meaning: { type: Type.STRING }
+                  }
+                }
+              },
+              sentencePractice: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    prompt: { type: Type.STRING },
+                    answer: { type: Type.STRING },
+                    hint: { type: Type.STRING }
+                  }
+                }
+              }
+            },
+            required: ["title", "story", "translation", "vocabulary", "sentencePractice"]
+          }
+        }
+      });
+
+      const data = JSON.parse(response.text || '{}');
+      const newStory = { ...data, timestamp: Date.now() };
+      setDailyStory(newStory);
+      setDailyAnswers(new Array(data.sentencePractice.length).fill(''));
+      safeLocalStorageSet('duo_daily_story', JSON.stringify(newStory));
+      setShowToast("每日短文生成成功！");
+    } catch (error) {
+      console.error("Failed to generate daily story:", error);
+      setShowToast("生成每日短文失敗，請稍後再試");
+    } finally {
+      setIsGeneratingDaily(false);
+    }
+  };
+
+  const checkSentencePractice = async (index: number) => {
+    if (!dailyStory || !dailyAnswers[index]) return;
+    
+    const userMsg = dailyAnswers[index];
+    const correctMsg = dailyStory.sentencePractice[index].answer;
+    
+    setIsGrading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const model = "gemini-3-flash-preview";
+      
+      const prompt = `
+        學生正在進行法文造句練習。
+        題目提示：${dailyStory.sentencePractice[index].prompt}
+        參考答案：${correctMsg}
+        學生回答：${userMsg}
+        
+        請批改學生的句子，判斷是否正確（意思相近且語法正確即可）。
+        請回傳 JSON：
+        {
+          "isCorrect": boolean,
+          "feedback": "簡短的中文反饋與建議"
+        }
+      `;
+      
+      const response = await ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              isCorrect: { type: Type.BOOLEAN },
+              feedback: { type: Type.STRING }
+            }
+          }
+        }
+      });
+      
+      const result = JSON.parse(response.text || '{}');
+      setDailyFeedback(prev => ({ ...prev, [index]: result.feedback }));
+    } catch (error) {
+      console.error("Failed to check sentence:", error);
+    } finally {
+      setIsGrading(false);
     }
   };
 
@@ -1140,6 +1330,21 @@ export default function App() {
                 >
                   動詞閃卡
                 </button>
+                <button 
+                  onClick={() => {
+                    if (!dailyStory) {
+                      generateDailyStory();
+                    } else {
+                      setActiveTab('daily');
+                    }
+                  }}
+                  className={cn(
+                    "px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200",
+                    activeTab === 'daily' ? "bg-white text-duo-blue shadow-sm" : "text-duo-gray hover:text-duo-dark"
+                  )}
+                >
+                  每日閱讀
+                </button>
               </div>
             <div className="flex items-center gap-2">
               <button 
@@ -1332,6 +1537,21 @@ export default function App() {
                   )}
                 >
                   閃卡
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!dailyStory) {
+                      generateDailyStory();
+                    } else {
+                      setActiveTab('daily');
+                    }
+                  }}
+                  className={cn(
+                    "flex-shrink-0 px-6 py-2.5 rounded-xl text-sm font-bold transition-all",
+                    activeTab === 'daily' ? "bg-white text-duo-blue shadow-md" : "text-duo-gray"
+                  )}
+                >
+                  閱讀
                 </button>
               </div>
             )}
@@ -1818,6 +2038,155 @@ export default function App() {
                         className="mt-8 duo-button-yellow px-8 py-3"
                       >
                         立即生成統整
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              ) : activeTab === 'daily' ? (
+                <motion.div 
+                  key="daily"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="duo-card p-8 sm:p-12 shadow-xl shadow-duo-blue/5 min-h-[600px]"
+                >
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-10 pb-6 border-b-2 border-duo-border/50 gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-duo-blue rounded-2xl flex items-center justify-center shadow-lg shadow-duo-blue/20">
+                        <PenLine className="text-white w-7 h-7" />
+                      </div>
+                      <div>
+                        <h2 className="text-3xl font-extrabold text-duo-dark font-display">每日法文短文</h2>
+                        <p className="text-sm font-bold text-duo-gray">根據你累積的單字量身打造的閱讀與造句練習</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={generateDailyStory}
+                      disabled={isGeneratingDaily}
+                      className="text-sm font-bold text-duo-blue hover:text-duo-blue/80 transition-colors bg-duo-blue/5 px-4 py-2 rounded-xl flex items-center gap-2"
+                    >
+                      <RefreshCw className={cn("w-4 h-4", isGeneratingDaily && "animate-spin")} />
+                      產出新短文
+                    </button>
+                  </div>
+
+                  {isGeneratingDaily ? (
+                    <div className="flex flex-col items-center justify-center py-32 space-y-6">
+                      <Loader2 className="w-12 h-12 text-duo-blue animate-spin" />
+                      <p className="text-duo-gray font-bold animate-pulse">正在為你編寫專屬短文...</p>
+                    </div>
+                  ) : dailyStory ? (
+                    <div className="space-y-12">
+                      {/* Story Section */}
+                      <div className="bg-duo-light/30 rounded-[32px] border-2 border-duo-border p-8 sm:p-10">
+                        <div className="flex items-center justify-between mb-6">
+                          <h3 className="text-2xl font-black text-duo-dark font-display">{dailyStory.title}</h3>
+                          <button 
+                            onClick={() => speakText(dailyStory.story)}
+                            className="w-12 h-12 bg-white rounded-2xl border-2 border-duo-border flex items-center justify-center text-duo-blue hover:bg-duo-blue hover:text-white transition-all shadow-sm"
+                          >
+                            <Volume2 className="w-6 h-6" />
+                          </button>
+                        </div>
+                        <p className="text-xl sm:text-2xl font-bold text-duo-dark leading-relaxed mb-8">
+                          {dailyStory.story}
+                        </p>
+                        <div className="pt-6 border-t-2 border-duo-border/50">
+                          <p className="text-duo-gray font-medium italic leading-relaxed">
+                            {dailyStory.translation}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Vocabulary Section */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {dailyStory.vocabulary.map((v, i) => (
+                          <div key={i} className="bg-white p-5 rounded-2xl border-2 border-duo-border shadow-sm flex items-center justify-between group hover:border-duo-blue/30 transition-all">
+                            <div>
+                              <p className="text-lg font-black text-duo-dark group-hover:text-duo-blue transition-colors">{v.word}</p>
+                              <p className="text-sm font-bold text-duo-gray">{v.meaning}</p>
+                            </div>
+                            <button onClick={() => speakText(v.word)} className="text-duo-gray hover:text-duo-blue transition-colors">
+                              <Volume2 className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Sentence Practice Section */}
+                      <div className="space-y-8 pt-8 border-t-4 border-duo-border/30">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-duo-green rounded-xl flex items-center justify-center">
+                            <ClipboardCheck className="text-white w-6 h-6" />
+                          </div>
+                          <h3 className="text-2xl font-extrabold text-duo-dark font-display">造句練習</h3>
+                        </div>
+
+                        <div className="space-y-6">
+                          {dailyStory.sentencePractice.map((p, i) => (
+                            <div key={i} className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-duo-border shadow-sm">
+                              <div className="flex items-start gap-4 mb-4">
+                                <span className="w-8 h-8 bg-duo-light rounded-lg flex items-center justify-center font-black text-duo-gray flex-shrink-0 text-sm">
+                                  {i + 1}
+                                </span>
+                                <div>
+                                  <p className="text-lg font-bold text-duo-dark">{p.prompt}</p>
+                                  <p className="text-xs font-bold text-duo-blue mt-1 uppercase tracking-wider">提示：{p.hint}</p>
+                                </div>
+                              </div>
+                              <div className="flex gap-3">
+                                <input 
+                                  type="text"
+                                  value={dailyAnswers[i] || ''}
+                                  onChange={(e) => {
+                                    const newAnswers = [...dailyAnswers];
+                                    newAnswers[i] = e.target.value;
+                                    setDailyAnswers(newAnswers);
+                                  }}
+                                  placeholder="用法文造句..."
+                                  className="flex-1 bg-duo-light border-2 border-duo-border rounded-2xl px-6 py-3 text-base font-bold focus:outline-none focus:border-duo-blue transition-all"
+                                />
+                                <button 
+                                  onClick={() => checkSentencePractice(i)}
+                                  disabled={!dailyAnswers[i]?.trim() || isGrading}
+                                  className="duo-button-green px-6 py-3 text-sm flex items-center gap-2"
+                                >
+                                  {isGrading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                  檢查
+                                </button>
+                              </div>
+                              {dailyFeedback[i] && (
+                                <motion.div 
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  className="mt-4 p-4 bg-duo-blue/5 rounded-2xl border border-duo-blue/20 text-sm font-bold text-duo-dark"
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-duo-blue mt-0.5 flex-shrink-0" />
+                                    <p>{dailyFeedback[i]}</p>
+                                  </div>
+                                  <p className="mt-2 text-xs text-duo-gray">參考答案：{p.answer}</p>
+                                </motion.div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
+                      <div className="w-20 h-20 bg-duo-light rounded-full flex items-center justify-center mb-6">
+                        <PenLine className="w-10 h-10 text-duo-border" />
+                      </div>
+                      <h3 className="text-xl font-black text-duo-dark mb-2">尚未生成每日短文</h3>
+                      <p className="text-duo-gray font-bold max-w-md">
+                        我會根據你目前學過的單字量身打造一篇短文，幫助你練習閱讀與造句。
+                      </p>
+                      <button 
+                        onClick={generateDailyStory}
+                        className="mt-8 duo-button-blue px-8 py-3"
+                      >
+                        立即生成短文
                       </button>
                     </div>
                   )}
