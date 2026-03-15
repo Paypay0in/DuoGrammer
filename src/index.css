@@ -106,9 +106,12 @@
     transform: rotateY(180deg);
   }
 
+  .handwriting-canvas, 
+  .handwriting-canvas > div,
   .handwriting-canvas canvas {
     cursor: crosshair !important;
     background-color: transparent !important;
+    background: transparent !important;
   }
 
   .handwriting-canvas {

@@ -1967,24 +1967,19 @@ export default function App() {
                                 </div>
 
                                 {isDrawingEnabled && (
-                                  <div className="absolute inset-0 z-20 pointer-events-auto">
+                                  <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
                                     <CanvasDraw
                                       ref={canvasRef}
                                       brushColor={penColor === "transparent" ? "#ffffff" : penColor}
                                       brushRadius={brushRadius}
                                       lazyRadius={0}
                                       canvasWidth="100%"
-                                      canvasHeight={canvasHeight}
-                                      backgroundColor="transparent"
+                                      canvasHeight={canvasHeight || 500}
                                       hideGrid
                                       className="handwriting-canvas"
                                       style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        width: '100%',
-                                        height: '100%',
-                                        background: 'transparent'
+                                        background: 'transparent',
+                                        backgroundColor: 'transparent'
                                       }}
                                     />
                                   </div>
@@ -2765,24 +2760,19 @@ export default function App() {
                                   </div>
 
                                     {isDrawingEnabled && (
-                                      <div className="absolute inset-0 z-20 pointer-events-auto">
+                                      <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
                                         <CanvasDraw
                                           ref={canvasRef}
                                           brushColor={penColor === "transparent" ? "#ffffff" : penColor}
                                           brushRadius={brushRadius}
                                           lazyRadius={0}
                                           canvasWidth="100%"
-                                          canvasHeight={canvasHeight}
-                                          backgroundColor="transparent"
+                                          canvasHeight={canvasHeight || 500}
                                           hideGrid
                                           className="handwriting-canvas"
                                           style={{
-                                            position: 'absolute',
-                                            top: 0,
-                                            left: 0,
-                                            width: '100%',
-                                            height: '100%',
-                                            background: 'transparent'
+                                            background: 'transparent',
+                                            backgroundColor: 'transparent'
                                           }}
                                         />
                                       </div>
