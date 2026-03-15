@@ -139,6 +139,7 @@ export default function App() {
   const [isAutoSpeak, setIsAutoSpeak] = useState(true);
   const [isSlowMode, setIsSlowMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const [globalSummary, setGlobalSummary] = useState<GlobalSummaryData | null>(() => {
     const saved = localStorage.getItem('duo_grammar_summary_v2');
@@ -312,8 +313,8 @@ export default function App() {
       if (audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume();
       }
-      window.removeEventListener('click', unlockAudio);
-      window.removeEventListener('touchstart', unlockAudio);
+      // Also try to resume speech synthesis
+      window.speechSynthesis.resume();
     };
     window.addEventListener('click', unlockAudio);
     window.addEventListener('touchstart', unlockAudio);
@@ -400,15 +401,45 @@ export default function App() {
     }
   };
 
+  const enableAudio = () => {
+    try {
+      // 1. Unlock Web Audio API
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+
+      // 2. Unlock Speech Synthesis with a silent utterance
+      window.speechSynthesis.cancel();
+      const silent = new SpeechSynthesisUtterance("");
+      silent.volume = 0;
+      window.speechSynthesis.speak(silent);
+
+      // 3. Unlock HTML5 Audio
+      const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+      silentAudio.play().catch(() => {});
+
+      setAudioEnabled(true);
+      setShowToast("音訊引擎已啟動！");
+    } catch (e) {
+      console.error("Audio activation failed:", e);
+    }
+  };
+
   const speakText = async (text: string, force = false) => {
     if (!isAutoSpeak && !force) return;
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-    }
     
-    console.log("Speaking text:", text.substring(0, 50));
+    // Immediate visual and engine feedback
     setIsSpeaking(true);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+
+    // Synchronously start a silent utterance to keep the gesture chain alive
+    const gestureUnlock = new SpeechSynthesisUtterance("");
+    gestureUnlock.volume = 0;
+    window.speechSynthesis.speak(gestureUnlock);
 
     const fallbackSpeak = (t: string) => {
       try {
@@ -417,6 +448,7 @@ export default function App() {
         utterance.lang = 'fr-FR';
         utterance.rate = isSlowMode ? 0.5 : 0.85;
         utterance.pitch = 1.0;
+        utterance.volume = 1.0;
         
         const voices = window.speechSynthesis.getVoices();
         const frenchVoice = voices.find(v => v.lang.startsWith('fr') && v.name.includes('Google')) 
@@ -424,13 +456,11 @@ export default function App() {
                           || voices[0];
         
         if (frenchVoice) utterance.voice = frenchVoice;
-        
         utterance.onend = () => setIsSpeaking(false);
         utterance.onerror = () => setIsSpeaking(false);
-        
         window.speechSynthesis.speak(utterance);
       } catch (error) {
-        console.error("Speech synthesis failed:", error);
+        console.error("Fallback failed:", error);
         setIsSpeaking(false);
       }
     };
@@ -460,70 +490,27 @@ export default function App() {
       });
 
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Gemini TTS Timeout")), 4000)
+        setTimeout(() => reject(new Error("TTS Timeout")), 2000)
       );
 
       const response = await Promise.race([ttsPromise, timeoutPromise]) as any;
       const part = response.candidates?.[0]?.content?.parts?.[0];
       const base64Audio = part?.inlineData?.data;
-      let mimeType = part?.inlineData?.mimeType || 'audio/wav';
       
       if (base64Audio) {
-        const byteCharacters = atob(base64Audio);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        
-        let finalBlob: Blob;
-        if (mimeType.includes('pcm')) {
-          const dataSize = byteArray.length;
-          const header = new ArrayBuffer(44);
-          const view = new DataView(header);
-          view.setUint32(0, 0x52494646, false); 
-          view.setUint32(4, 36 + dataSize, true);
-          view.setUint32(8, 0x57415645, false); 
-          view.setUint32(12, 0x666d7420, false); 
-          view.setUint16(20, 1, true); 
-          view.setUint16(22, 1, true); 
-          view.setUint32(24, 24000, true); 
-          view.setUint32(28, 48000, true); 
-          view.setUint16(32, 2, true); 
-          view.setUint16(34, 16, true); 
-          view.setUint32(36, 0x64617461, false); 
-          view.setUint32(40, dataSize, true);
-          const combined = new Uint8Array(44 + dataSize);
-          combined.set(new Uint8Array(header), 0);
-          combined.set(byteArray, 44);
-          finalBlob = new Blob([combined], { type: 'audio/wav' });
-        } else {
-          finalBlob = new Blob([byteArray], { type: mimeType });
-        }
-
-        const audioUrl = URL.createObjectURL(finalBlob);
+        const audioUrl = `data:audio/wav;base64,${base64Audio}`;
         const audio = new Audio(audioUrl);
+        audio.volume = 1.0;
         
         audio.onplay = () => setIsSpeaking(true);
-        audio.onended = () => {
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
-        };
-        audio.onerror = () => {
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
-          fallbackSpeak(text);
-        };
+        audio.onended = () => setIsSpeaking(false);
+        audio.onerror = () => fallbackSpeak(text);
         
-        await audio.play().catch(err => {
-          console.warn("Audio play failed, retrying with fallback:", err);
-          fallbackSpeak(text);
-        });
+        await audio.play().catch(() => fallbackSpeak(text));
       } else {
         fallbackSpeak(text);
       }
     } catch (error) {
-      console.warn("Gemini TTS failed:", error);
       fallbackSpeak(text);
     }
   };
@@ -1375,6 +1362,15 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-6">
+            {!audioEnabled && (
+              <button 
+                onClick={enableAudio}
+                className="flex items-center gap-2 px-4 py-2 bg-duo-blue text-white rounded-xl text-xs font-black hover:bg-duo-blue/90 transition-all shadow-lg shadow-duo-blue/25 animate-bounce"
+              >
+                <Volume2 className="w-4 h-4" />
+                啟動音訊
+              </button>
+            )}
             <div className="hidden md:flex bg-duo-light/50 p-1 rounded-2xl border border-duo-border">
                 <button 
                   onClick={() => setActiveTab('study')}
@@ -2247,15 +2243,15 @@ export default function App() {
                       {/* Vocabulary Section */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {dailyStory.vocabulary.map((v, i) => (
-                          <div key={i} className="bg-white p-5 rounded-2xl border-2 border-duo-border shadow-sm flex items-center justify-between group hover:border-duo-blue/30 transition-all">
-                            <div>
-                              <p className="text-lg font-black text-duo-dark group-hover:text-duo-blue transition-colors">{v.word}</p>
-                              <p className="text-sm font-bold text-duo-gray">{v.meaning}</p>
+                          <div key={i} className="bg-white p-5 rounded-2xl border-2 border-duo-border shadow-sm flex items-center justify-between group hover:border-duo-blue/30 transition-all min-w-0 overflow-hidden">
+                            <div className="min-w-0 flex-1 mr-4 overflow-hidden">
+                              <p className="text-lg font-black text-duo-dark group-hover:text-duo-blue transition-colors truncate w-full">{v.word}</p>
+                              <p className="text-sm font-bold text-duo-gray break-words line-clamp-2 w-full">{v.meaning}</p>
                             </div>
                             <button 
                               onClick={() => speakText(v.word)} 
                               className={cn(
-                                "p-2 rounded-xl transition-all",
+                                "p-3 rounded-xl transition-all flex-shrink-0",
                                 isSpeaking ? "bg-duo-blue/20 text-duo-blue animate-pulse" : "text-duo-gray hover:text-duo-blue hover:bg-duo-blue/5"
                               )}
                             >
