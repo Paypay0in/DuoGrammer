@@ -225,12 +225,13 @@ export default function App() {
     if (!contentRef.current) return;
     const resizeObserver = new ResizeObserver((entries) => {
       for (let entry of entries) {
-        setCanvasHeight(entry.target.scrollHeight);
+        // Use scrollHeight to ensure the canvas covers the entire content
+        setCanvasHeight(entry.target.scrollHeight + 100); 
       }
     });
     resizeObserver.observe(contentRef.current);
     return () => resizeObserver.disconnect();
-  }, [globalSummary]);
+  }, [globalSummary, currentAnalysis, activeTab]);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [dailyStory, setDailyStory] = useState<DailyStory | null>(() => {
@@ -1974,7 +1975,7 @@ export default function App() {
                                       lazyRadius={0}
                                       canvasWidth="100%"
                                       canvasHeight={canvasHeight}
-                                      backgroundColor="transparent"
+                                      backgroundColor="rgba(0,0,0,0)"
                                       hideGrid
                                       className="handwriting-canvas"
                                       style={{
@@ -2763,29 +2764,29 @@ export default function App() {
                                     </Markdown>
                                   </div>
 
-                                  {isDrawingEnabled && (
-                                    <div className="absolute inset-0 z-20 pointer-events-auto">
-                                      <CanvasDraw
-                                        ref={canvasRef}
-                                        brushColor={penColor === "transparent" ? "#ffffff" : penColor}
-                                        brushRadius={brushRadius}
-                                        lazyRadius={0}
-                                        canvasWidth="100%"
-                                        canvasHeight={canvasHeight}
-                                        backgroundColor="transparent"
-                                        hideGrid
-                                        className="handwriting-canvas"
-                                        style={{
-                                          position: 'absolute',
-                                          top: 0,
-                                          left: 0,
-                                          width: '100%',
-                                          height: '100%',
-                                          background: 'transparent'
-                                        }}
-                                      />
-                                    </div>
-                                  )}
+                                    {isDrawingEnabled && (
+                                      <div className="absolute inset-0 z-20 pointer-events-auto">
+                                        <CanvasDraw
+                                          ref={canvasRef}
+                                          brushColor={penColor === "transparent" ? "#ffffff" : penColor}
+                                          brushRadius={brushRadius}
+                                          lazyRadius={0}
+                                          canvasWidth="100%"
+                                          canvasHeight={canvasHeight}
+                                          backgroundColor="rgba(0,0,0,0)"
+                                          hideGrid
+                                          className="handwriting-canvas"
+                                          style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            width: '100%',
+                                            height: '100%',
+                                            background: 'transparent'
+                                          }}
+                                        />
+                                      </div>
+                                    )}
                                 </div>
 
                                   {/* Unit Specific Q&A */}
