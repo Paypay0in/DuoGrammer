@@ -1381,9 +1381,9 @@ export default function App() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="duo-card p-8 sm:p-12 shadow-xl shadow-duo-yellow/5 min-h-[600px]"
+                  className="duo-card p-4 sm:p-8 lg:p-12 shadow-xl shadow-duo-yellow/5 min-h-[600px]"
                 >
-                  <div className="flex items-center justify-between mb-10 pb-6 border-b-2 border-duo-border/50">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 pb-6 border-b-2 border-duo-border/50 gap-4">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-duo-yellow rounded-2xl flex items-center justify-center shadow-lg shadow-duo-yellow/20">
                         <Sparkles className="text-white w-7 h-7" />
@@ -1467,21 +1467,21 @@ export default function App() {
                             animate={{ height: isSummaryExpanded ? 'auto' : 0, opacity: isSummaryExpanded ? 1 : 0 }}
                             className="overflow-hidden"
                           >
-                            <div className="p-8 pt-0 border-t-2 border-duo-border/30">
+                            <div className="p-4 sm:p-8 pt-0 border-t-2 border-duo-border/30">
                               <div className="markdown-body mt-6">
                                 <Markdown
                                   remarkPlugins={[remarkGfm]}
                                   components={{
                                     table: (props) => (
-                                      <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
-                                        <table className="w-full border-collapse min-w-[600px]" {...props} />
+                                      <div className="w-full overflow-x-auto my-6 border-2 border-duo-border rounded-2xl shadow-sm bg-white no-scrollbar">
+                                        <table className="w-full border-collapse min-w-[500px]" {...props} />
                                       </div>
                                     ),
                                     th: (props) => (
-                                      <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                      <th className="p-3 sm:p-5 text-left text-[10px] sm:text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
                                     ),
                                     td: (props) => (
-                                      <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                      <td className="p-3 sm:p-5 text-xs sm:text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
                                     )
                                   }}
                                 >
@@ -1640,18 +1640,18 @@ export default function App() {
                                           remarkPlugins={[remarkGfm]}
                                           components={{
                                             table: (props) => (
-                                              <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
+                                              <div className="w-full overflow-x-auto my-6 border-2 border-duo-border rounded-2xl shadow-sm bg-white no-scrollbar">
                                                 <table className="w-full border-collapse min-w-[500px]" {...props} />
                                               </div>
                                             ),
                                             th: (props) => (
-                                              <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                              <th className="p-3 sm:p-5 text-left text-[10px] sm:text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
                                             ),
                                             td: (props) => (
-                                              <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                              <td className="p-3 sm:p-5 text-xs sm:text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
                                             ),
                                             blockquote: (props) => (
-                                              <blockquote className="border-l-8 border-duo-green bg-duo-green/5 p-6 rounded-r-3xl my-8 italic font-medium text-duo-dark" {...props} />
+                                              <blockquote className="border-l-4 sm:border-l-8 border-duo-green bg-duo-green/5 p-4 sm:p-6 rounded-r-2xl sm:rounded-r-3xl my-6 sm:my-8 italic font-medium text-duo-dark" {...props} />
                                             )
                                           }}
                                         >
@@ -1900,16 +1900,16 @@ export default function App() {
                                     <Markdown
                                       remarkPlugins={[remarkGfm]}
                                       components={{
-                                        table: ({node, ...props}) => (
-                                          <div className="w-full overflow-x-auto my-8 border-2 border-duo-border rounded-[32px] shadow-sm bg-white no-scrollbar">
+                                        table: (props) => (
+                                          <div className="w-full overflow-x-auto my-6 border-2 border-duo-border rounded-2xl shadow-sm bg-white no-scrollbar">
                                             <table className="w-full border-collapse min-w-[500px]" {...props} />
                                           </div>
                                         ),
-                                        th: ({node, ...props}) => (
-                                          <th className="p-5 text-left text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                        th: (props) => (
+                                          <th className="p-3 sm:p-5 text-left text-[10px] sm:text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
                                         ),
-                                        td: ({node, ...props}) => (
-                                          <td className="p-5 text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                        td: (props) => (
+                                          <td className="p-3 sm:p-5 text-xs sm:text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
                                         )
                                       }}
                                     >

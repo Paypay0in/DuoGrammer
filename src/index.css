@@ -21,26 +21,27 @@
   }
   
   .markdown-body {
-    @apply text-duo-dark leading-relaxed;
+    @apply text-duo-dark leading-relaxed break-words overflow-hidden;
   }
   .markdown-body h1, .markdown-body h2, .markdown-body h3 {
-    @apply font-bold mt-8 mb-4 text-duo-blue font-display;
+    @apply font-bold mt-8 mb-4 text-duo-blue font-display leading-tight;
   }
-  .markdown-body h1 { @apply text-3xl; }
-  .markdown-body h2 { @apply text-2xl border-b-2 border-duo-border/50 pb-2; }
-  .markdown-body h3 { @apply text-xl; }
-  .markdown-body p { @apply mb-4 text-base; }
-  .markdown-body ul, .markdown-body ol { @apply mb-6 pl-6; }
+  .markdown-body h1 { @apply text-2xl sm:text-3xl; }
+  .markdown-body h2 { @apply text-xl sm:text-2xl border-b-2 border-duo-border/50 pb-2; }
+  .markdown-body h3 { @apply text-lg sm:text-xl; }
+  .markdown-body p { @apply mb-4 text-sm sm:text-base; }
+  .markdown-body ul, .markdown-body ol { @apply mb-6 pl-5 sm:pl-6; }
   .markdown-body ul { @apply list-disc; }
   .markdown-body ol { @apply list-decimal; }
-  .markdown-body li { @apply mb-2; }
+  .markdown-body li { @apply mb-2 text-sm sm:text-base; }
   .markdown-body strong { @apply text-duo-green font-bold; }
-  .markdown-body code { @apply bg-duo-border/30 px-1.5 py-0.5 rounded text-duo-red font-mono text-sm; }
+  .markdown-body code { @apply bg-duo-border/30 px-1.5 py-0.5 rounded text-duo-red font-mono text-xs sm:text-sm; }
   .markdown-body blockquote { @apply border-l-4 border-duo-border pl-4 italic text-duo-gray my-6; }
+  .markdown-body img { @apply max-w-full h-auto rounded-2xl my-6; }
   
   /* Table Styles */
   .markdown-body table {
-    @apply w-full border-collapse my-8 overflow-hidden rounded-3xl border-2 border-duo-border shadow-sm;
+    @apply w-full border-collapse my-8 overflow-hidden rounded-2xl border-2 border-duo-border shadow-sm;
   }
   .markdown-body thead {
     @apply bg-duo-light;
