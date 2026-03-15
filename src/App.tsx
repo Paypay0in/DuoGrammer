@@ -4,7 +4,7 @@ import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, C
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import CanvasDraw from 'react-canvas-draw';
+import HandwritingCanvas, { HandwritingCanvasRef } from './components/HandwritingCanvas';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Type } from "@google/genai";
@@ -150,7 +150,7 @@ export default function App() {
   const [brushRadius, setBrushRadius] = useState(2);
   const [canvasHeight, setCanvasHeight] = useState(400);
   const unitRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  const canvasRef = useRef<any>(null);
+  const canvasRef = useRef<HandwritingCanvasRef>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   const [globalSummary, setGlobalSummary] = useState<GlobalSummaryData | null>(() => {
@@ -1970,18 +1970,13 @@ export default function App() {
 
                                 {activeDrawingId === 'summary' && (
                                   <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
-                                    <CanvasDraw
+                                    <HandwritingCanvas
                                       ref={canvasRef}
-                                      brushColor={penColor === "transparent" ? "#ffffff" : penColor}
-                                      brushRadius={brushRadius}
-                                      lazyRadius={0}
-                                      canvasWidth="100%"
-                                      canvasHeight={canvasHeight}
-                                      hideGrid={true}
+                                      color={penColor}
+                                      radius={brushRadius}
+                                      width="100%"
+                                      height={canvasHeight}
                                       className="handwriting-canvas"
-                                      style={{
-                                        background: 'transparent'
-                                      }}
                                     />
                                   </div>
                                 )}
@@ -2765,18 +2760,13 @@ export default function App() {
 
                                     {activeDrawingId === item.id && (
                                       <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
-                                        <CanvasDraw
+                                        <HandwritingCanvas
                                           ref={canvasRef}
-                                          brushColor={penColor === "transparent" ? "#ffffff" : penColor}
-                                          brushRadius={brushRadius}
-                                          lazyRadius={0}
-                                          canvasWidth="100%"
-                                          canvasHeight={canvasHeight}
-                                          hideGrid={true}
+                                          color={penColor}
+                                          radius={brushRadius}
+                                          width="100%"
+                                          height={canvasHeight}
                                           className="handwriting-canvas"
-                                          style={{
-                                            background: 'transparent'
-                                          }}
                                         />
                                       </div>
                                     )}

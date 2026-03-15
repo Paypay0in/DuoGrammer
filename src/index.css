@@ -106,23 +106,10 @@
     transform: rotateY(180deg);
   }
 
-  /* 最終解決方案：強制將 react-canvas-draw 產生的所有層級設為透明 */
-  .handwriting-canvas,
-  .handwriting-canvas div,
-  .handwriting-canvas canvas {
+  .handwriting-canvas {
+    cursor: crosshair !important;
     background-color: transparent !important;
     background: transparent !important;
-    border-color: transparent !important;
-  }
-
-  /* 隱藏可能存在的網格層 */
-  .handwriting-canvas canvas:first-child {
-    opacity: 0 !important;
-    visibility: hidden !important;
-  }
-
-  .handwriting-canvas canvas {
-    cursor: crosshair !important;
   }
 
   .handwriting-canvas {
