@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw, PenLine, Pencil, Eraser } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw, PenLine, Pencil, Eraser, Highlighter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -148,6 +148,7 @@ export default function App() {
   const [activeDrawingId, setActiveDrawingId] = useState<string | null>(null);
   const [penColor, setPenColor] = useState("#1cb0f6");
   const [brushRadius, setBrushRadius] = useState(2);
+  const [isHighlighter, setIsHighlighter] = useState(false);
   const [canvasHeight, setCanvasHeight] = useState(400);
   const unitRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const canvasRef = useRef<HandwritingCanvasRef>(null);
@@ -206,7 +207,7 @@ export default function App() {
       
       if (key && savedDrawings[key]) {
         setTimeout(() => {
-          canvasRef.current.loadSaveData(savedDrawings[key], true);
+          canvasRef.current.loadSaveData(savedDrawings[key]);
         }, 100);
       } else {
         canvasRef.current.clear();
@@ -1887,29 +1888,37 @@ export default function App() {
                               <div className="relative mt-6 min-h-[400px]">
                                 {/* Drawing Toolbar */}
                                 {activeDrawingId === 'summary' && (
-                                  <div className="absolute top-0 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
-                                    <button 
-                                      onClick={() => setPenColor("#1cb0f6")}
-                                      className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" ? "border-duo-dark scale-110" : "border-transparent")}
-                                      style={{ backgroundColor: "#1cb0f6" }}
-                                    />
-                                    <button 
-                                      onClick={() => setPenColor("#ff4b4b")}
-                                      className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" ? "border-duo-dark scale-110" : "border-transparent")}
-                                      style={{ backgroundColor: "#ff4b4b" }}
-                                    />
-                                    <button 
-                                      onClick={() => setPenColor("#58cc02")}
-                                      className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" ? "border-duo-dark scale-110" : "border-transparent")}
-                                      style={{ backgroundColor: "#58cc02" }}
-                                    />
-                                    <button 
-                                      onClick={() => setPenColor("transparent")}
-                                      className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
-                                      title="橡皮擦"
-                                    >
-                                      <Eraser className="w-5 h-5" />
-                                    </button>
+                                    <div className="absolute top-0 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
+                                      <button 
+                                        onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                                        style={{ backgroundColor: "#1cb0f6" }}
+                                      />
+                                      <button 
+                                        onClick={() => { setPenColor("#ff4b4b"); setIsHighlighter(false); }}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                                        style={{ backgroundColor: "#ff4b4b" }}
+                                      />
+                                      <button 
+                                        onClick={() => { setPenColor("#58cc02"); setIsHighlighter(false); }}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                                        style={{ backgroundColor: "#58cc02" }}
+                                      />
+                                      <div className="w-full h-0.5 bg-duo-border my-1" />
+                                      <button 
+                                        onClick={() => { setIsHighlighter(!isHighlighter); if (penColor === 'transparent') setPenColor('#1cb0f6'); }}
+                                        className={cn("p-2 rounded-xl transition-all border-2", isHighlighter ? "bg-yellow-100 border-yellow-400 text-yellow-600" : "bg-white border-duo-border text-duo-gray")}
+                                        title="螢光筆"
+                                      >
+                                        <Highlighter className="w-5 h-5" />
+                                      </button>
+                                      <button 
+                                        onClick={() => { setPenColor("transparent"); setIsHighlighter(false); }}
+                                        className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
+                                        title="橡皮擦"
+                                      >
+                                        <Eraser className="w-5 h-5" />
+                                      </button>
                                     <div className="w-full h-0.5 bg-duo-border my-1" />
                                     <div className="flex flex-col items-center gap-1 py-1">
                                       <span className="text-[8px] font-black text-duo-gray">粗細</span>
@@ -1974,6 +1983,7 @@ export default function App() {
                                       ref={canvasRef}
                                       color={penColor}
                                       radius={brushRadius}
+                                      isHighlighter={isHighlighter}
                                       width="100%"
                                       height={canvasHeight}
                                       className="handwriting-canvas"
@@ -2649,22 +2659,30 @@ export default function App() {
                                   {activeDrawingId === item.id && (
                                     <div className="absolute top-0 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
                                       <button 
-                                        onClick={() => setPenColor("#1cb0f6")}
-                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" ? "border-duo-dark scale-110" : "border-transparent")}
+                                        onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
                                         style={{ backgroundColor: "#1cb0f6" }}
                                       />
                                       <button 
-                                        onClick={() => setPenColor("#ff4b4b")}
-                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" ? "border-duo-dark scale-110" : "border-transparent")}
+                                        onClick={() => { setPenColor("#ff4b4b"); setIsHighlighter(false); }}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
                                         style={{ backgroundColor: "#ff4b4b" }}
                                       />
                                       <button 
-                                        onClick={() => setPenColor("#58cc02")}
-                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" ? "border-duo-dark scale-110" : "border-transparent")}
+                                        onClick={() => { setPenColor("#58cc02"); setIsHighlighter(false); }}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
                                         style={{ backgroundColor: "#58cc02" }}
                                       />
+                                      <div className="w-full h-0.5 bg-duo-border my-1" />
                                       <button 
-                                        onClick={() => setPenColor("transparent")}
+                                        onClick={() => { setIsHighlighter(!isHighlighter); if (penColor === 'transparent') setPenColor('#1cb0f6'); }}
+                                        className={cn("p-2 rounded-xl transition-all border-2", isHighlighter ? "bg-yellow-100 border-yellow-400 text-yellow-600" : "bg-white border-duo-border text-duo-gray")}
+                                        title="螢光筆"
+                                      >
+                                        <Highlighter className="w-5 h-5" />
+                                      </button>
+                                      <button 
+                                        onClick={() => { setPenColor("transparent"); setIsHighlighter(false); }}
                                         className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
                                         title="橡皮擦"
                                       >
@@ -2764,6 +2782,7 @@ export default function App() {
                                           ref={canvasRef}
                                           color={penColor}
                                           radius={brushRadius}
+                                          isHighlighter={isHighlighter}
                                           width="100%"
                                           height={canvasHeight}
                                           className="handwriting-canvas"

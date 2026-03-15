@@ -5,6 +5,7 @@ interface HandwritingCanvasProps {
   height: number;
   color: string;
   radius: number;
+  isHighlighter?: boolean;
   className?: string;
 }
 
@@ -20,20 +21,41 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
   height,
   color,
   radius,
+  isHighlighter = false,
   className
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
 
+  // Sync internal resolution with CSS size to fix offset
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
 
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    const updateSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      // Only update if size actually changed to avoid clearing canvas unnecessarily
+      if (canvas.width !== rect.width || canvas.height !== rect.height) {
+        // Save current content before resizing as resizing clears the canvas
+        const tempData = canvas.toDataURL();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        
+        // Restore content
+        const img = new Image();
+        img.src = tempData;
+        img.onload = () => {
+          const ctx = canvas.getContext('2d');
+          if (ctx) ctx.drawImage(img, 0, 0);
+        };
+      }
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(canvas);
+    return () => observer.disconnect();
   }, []);
 
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
@@ -50,6 +72,8 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
       clientY = (e as MouseEvent).clientY;
     }
 
+    // Since we synced internal width/height with rect.width/height, 
+    // the coordinates are direct.
     return {
       x: clientX - rect.left,
       y: clientY - rect.top
@@ -62,20 +86,30 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Save current state to history before starting new stroke
+    // Save current state to history
     setHistory(prev => [...prev, canvas.toDataURL()]);
 
     const { x, y } = getCoordinates(e);
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.strokeStyle = color === 'transparent' ? '#ffffff' : color;
+    
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.lineWidth = radius * 2;
     
-    // If eraser, use destination-out for true transparency erasing
     if (color === 'transparent') {
       ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = '#ffffff';
+    } else if (isHighlighter) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.4; // Semi-transparent for highlighter
+      ctx.strokeStyle = color;
+      ctx.lineWidth = radius * 6; // Highlighters are usually thicker
     } else {
       ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = color;
     }
 
     setIsDrawing(true);
@@ -144,15 +178,14 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
   return (
     <canvas
       ref={canvasRef}
-      width={typeof width === 'number' ? width : 1000} // Fallback width
-      height={height}
       className={className}
       style={{ 
         width: '100%', 
         height: `${height}px`, 
         touchAction: 'none',
         background: 'transparent',
-        backgroundColor: 'transparent'
+        backgroundColor: 'transparent',
+        display: 'block'
       }}
       onMouseDown={startDrawing}
       onMouseMove={draw}
