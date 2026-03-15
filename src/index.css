@@ -106,21 +106,23 @@
     transform: rotateY(180deg);
   }
 
-  .handwriting-canvas, 
-  .handwriting-canvas > div {
+  /* 最終解決方案：強制將 react-canvas-draw 產生的所有層級設為透明 */
+  .handwriting-canvas,
+  .handwriting-canvas div,
+  .handwriting-canvas canvas {
     background-color: transparent !important;
     background: transparent !important;
+    border-color: transparent !important;
   }
 
-  /* 強制隱藏 react-canvas-draw 的背景/網格層，這是造成空白的主因 */
+  /* 隱藏可能存在的網格層 */
   .handwriting-canvas canvas:first-child {
-    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
   }
 
   .handwriting-canvas canvas {
     cursor: crosshair !important;
-    background-color: transparent !important;
-    background: transparent !important;
   }
 
   .handwriting-canvas {
