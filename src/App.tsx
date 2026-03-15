@@ -928,16 +928,17 @@ export default function App() {
       ).join('\n\n');
 
       const systemInstruction = `
-        你是一個友善的法文老師。學生已經學習了以下多個單元的內容：
+        你是一個非常有耐心且友善的法文老師。學生目前正在使用 Duolingo 學習，並已經上傳了以下單元的內容：
         ${allLessonsContext}
         
-        請與學生進行口語模擬對話。
-        你的目標是：
-        1. 綜合運用這些單元中出現過的單字與語法。
-        2. 隨機切換話題或複習舊的單元內容，確保學生真的掌握了。
-        3. 糾正他們的錯誤，並鼓勵他們多使用學過的表達方式。
-        4. 保持對話簡短、自然且有趣。
-        請主要使用法文對話，但在解釋複雜語法時可以使用繁體中文輔助。
+        你的任務是與學生進行「綜合口語對話練習」，但必須嚴格遵守以下規則：
+        1. **精準匹配程度**：觀察學生上傳的單元內容，這代表了他們目前的法文水平。**絕對不要**使用遠超這些單元範圍的複雜語法（如虛擬式、複雜時態）或生僻單字。
+        2. **循序漸進**：如果學生上傳的單元不多，請將對話難度設定在 A1 初級水平。使用簡單、短小的句子，並圍繞學過的單元話題展開。
+        3. **雙語輔助**：請主要使用法文與學生對話，但如果句子稍長，請務必在括號中附上繁體中文翻譯。
+        4. **糾錯與鼓勵**：當學生出錯時，用溫柔的方式糾正他們，並鼓勵他們嘗試使用學過的單元單字。
+        5. **主動引導**：如果學生不知道說什麼，請主動根據學過的單元內容拋出一個簡單的問題。
+        
+        目前的對話目標：讓學生在不感到壓力的情況下，練習運用已學過的知識。
       `;
 
       const response = await ai.models.generateContent({
@@ -1112,7 +1113,7 @@ export default function App() {
                   onClick={() => {
                     setActiveTab('practice');
                     if (chatMessages.length === 0 && history.length > 0) {
-                      const welcome = "Salut ! J'ai parcouru toutes les unités que vous avez apprises jusqu'à présent. Prêt à tout pratiquer ensemble ? De quoi aimeriez-vous parler aujourd'hui ?";
+                      const welcome = "Bonjour ! 我已經看過你上傳的所有單元了。別擔心，我會配合你目前的進度，用簡單的法文陪你練習。準備好開始聊聊了嗎？ (Prêt à commencer ?)";
                       setChatMessages([{ role: 'model', text: welcome }]);
                       speakText(welcome);
                     }
