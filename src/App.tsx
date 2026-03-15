@@ -1975,7 +1975,7 @@ export default function App() {
                                       lazyRadius={0}
                                       canvasWidth="100%"
                                       canvasHeight={canvasHeight}
-                                      backgroundColor="rgba(0,0,0,0)"
+                                      backgroundColor="transparent"
                                       hideGrid
                                       className="handwriting-canvas"
                                       style={{
@@ -2773,7 +2773,7 @@ export default function App() {
                                           lazyRadius={0}
                                           canvasWidth="100%"
                                           canvasHeight={canvasHeight}
-                                          backgroundColor="rgba(0,0,0,0)"
+                                          backgroundColor="transparent"
                                           hideGrid
                                           className="handwriting-canvas"
                                           style={{

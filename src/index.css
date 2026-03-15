@@ -108,6 +108,7 @@
 
   .handwriting-canvas canvas {
     cursor: crosshair !important;
+    background-color: transparent !important;
   }
 
   .handwriting-canvas {
