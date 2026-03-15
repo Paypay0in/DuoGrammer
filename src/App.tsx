@@ -138,6 +138,8 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [isAutoSpeak, setIsAutoSpeak] = useState(true);
   const [isSlowMode, setIsSlowMode] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const [globalSummary, setGlobalSummary] = useState<GlobalSummaryData | null>(() => {
     const saved = localStorage.getItem('duo_grammar_summary_v2');
     if (!saved) return null;
@@ -292,6 +294,36 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    // Pre-warm speech synthesis voices
+    const loadVoices = () => {
+      window.speechSynthesis.getVoices();
+    };
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    // Unlock audio context on first interaction
+    const unlockAudio = () => {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
   // Persistence
   useEffect(() => {
     safeLocalStorageSet('duo_grammar_history', JSON.stringify(history.slice(0, 20)));
@@ -370,58 +402,129 @@ export default function App() {
 
   const speakText = async (text: string, force = false) => {
     if (!isAutoSpeak && !force) return;
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
     
     console.log("Speaking text:", text.substring(0, 50));
+    setIsSpeaking(true);
+
+    const fallbackSpeak = (t: string) => {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(t);
+        utterance.lang = 'fr-FR';
+        utterance.rate = isSlowMode ? 0.5 : 0.85;
+        utterance.pitch = 1.0;
+        
+        const voices = window.speechSynthesis.getVoices();
+        const frenchVoice = voices.find(v => v.lang.startsWith('fr') && v.name.includes('Google')) 
+                          || voices.find(v => v.lang.startsWith('fr'))
+                          || voices[0];
+        
+        if (frenchVoice) utterance.voice = frenchVoice;
+        
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+        
+        window.speechSynthesis.speak(utterance);
+      } catch (error) {
+        console.error("Speech synthesis failed:", error);
+        setIsSpeaking(false);
+      }
+    };
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'undefined' || apiKey === 'null' || apiKey.length < 10) {
+      fallbackSpeak(text);
+      return;
+    }
     
-    // Attempt Gemini TTS for higher quality
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      
-      // Prompt for emotion and speed
+      const ai = new GoogleGenAI({ apiKey });
       const speedInstruction = isSlowMode ? "Speak very slowly and clearly." : "Speak at a natural, slightly relaxed pace.";
       const prompt = `${speedInstruction} Speak with a warm, friendly, and encouraging tone. Text to speak: ${text}`;
 
-      const response = await ai.models.generateContent({
+      const ttsPromise = ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: prompt }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore is often a good warm voice
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
             },
           },
         },
       });
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Gemini TTS Timeout")), 4000)
+      );
+
+      const response = await Promise.race([ttsPromise, timeoutPromise]) as any;
+      const part = response.candidates?.[0]?.content?.parts?.[0];
+      const base64Audio = part?.inlineData?.data;
+      let mimeType = part?.inlineData?.mimeType || 'audio/wav';
+      
       if (base64Audio) {
-        const audioSrc = `data:audio/mp3;base64,${base64Audio}`;
-        const audio = new Audio(audioSrc);
-        audio.play();
-        return;
+        const byteCharacters = atob(base64Audio);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        
+        let finalBlob: Blob;
+        if (mimeType.includes('pcm')) {
+          const dataSize = byteArray.length;
+          const header = new ArrayBuffer(44);
+          const view = new DataView(header);
+          view.setUint32(0, 0x52494646, false); 
+          view.setUint32(4, 36 + dataSize, true);
+          view.setUint32(8, 0x57415645, false); 
+          view.setUint32(12, 0x666d7420, false); 
+          view.setUint16(20, 1, true); 
+          view.setUint16(22, 1, true); 
+          view.setUint32(24, 24000, true); 
+          view.setUint32(28, 48000, true); 
+          view.setUint16(32, 2, true); 
+          view.setUint16(34, 16, true); 
+          view.setUint32(36, 0x64617461, false); 
+          view.setUint32(40, dataSize, true);
+          const combined = new Uint8Array(44 + dataSize);
+          combined.set(new Uint8Array(header), 0);
+          combined.set(byteArray, 44);
+          finalBlob = new Blob([combined], { type: 'audio/wav' });
+        } else {
+          finalBlob = new Blob([byteArray], { type: mimeType });
+        }
+
+        const audioUrl = URL.createObjectURL(finalBlob);
+        const audio = new Audio(audioUrl);
+        
+        audio.onplay = () => setIsSpeaking(true);
+        audio.onended = () => {
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl);
+          fallbackSpeak(text);
+        };
+        
+        await audio.play().catch(err => {
+          console.warn("Audio play failed, retrying with fallback:", err);
+          fallbackSpeak(text);
+        });
+      } else {
+        fallbackSpeak(text);
       }
     } catch (error) {
-      console.warn("Gemini TTS failed, falling back to browser speech:", error);
-    }
-
-    // Fallback to browser TTS
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'fr-FR';
-      utterance.rate = isSlowMode ? 0.5 : 0.85; // Even slower based on user feedback
-      utterance.pitch = 1.0;
-      
-      const voices = window.speechSynthesis.getVoices();
-      const frenchVoice = voices.find(v => v.lang.startsWith('fr') && v.name.includes('Google')) 
-                        || voices.find(v => v.lang.startsWith('fr'))
-                        || voices[0];
-      
-      if (frenchVoice) utterance.voice = frenchVoice;
-      window.speechSynthesis.speak(utterance);
-    } catch (error) {
-      console.error("Speech synthesis failed:", error);
+      console.warn("Gemini TTS failed:", error);
+      fallbackSpeak(text);
     }
   };
 
@@ -1929,11 +2032,26 @@ export default function App() {
                         <p className="text-sm font-bold text-duo-gray">點擊卡片翻面，練習法文動詞變位與意思</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-black text-duo-gray uppercase tracking-widest">進度</p>
-                      <p className="text-lg font-black text-duo-red">
-                        {globalSummary?.flashcards ? currentFlashcardIndex + 1 : 0} / {globalSummary?.flashcards?.length || 0}
-                      </p>
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setIsSlowMode(!isSlowMode)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl transition-all duration-300 flex items-center gap-2 border-2",
+                          isSlowMode 
+                            ? "bg-duo-yellow/10 border-duo-yellow text-duo-yellow" 
+                            : "bg-white border-duo-border text-duo-gray hover:border-duo-blue/30"
+                        )}
+                      >
+                        <span className="text-xs font-black uppercase tracking-wider">
+                          {isSlowMode ? "慢速 0.5x" : "正常 0.85x"}
+                        </span>
+                      </button>
+                      <div className="text-right">
+                        <p className="text-xs font-black text-duo-gray uppercase tracking-widest">進度</p>
+                        <p className="text-lg font-black text-duo-red">
+                          {globalSummary?.flashcards ? currentFlashcardIndex + 1 : 0} / {globalSummary?.flashcards?.length || 0}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -1954,12 +2072,20 @@ export default function App() {
                             <h3 className="text-5xl sm:text-6xl font-black text-duo-dark text-center leading-tight">
                               {globalSummary.flashcards[currentFlashcardIndex].french}
                             </h3>
-                            <div className="mt-10 flex items-center gap-3 text-duo-blue">
-                              <Volume2 className="w-6 h-6" onClick={(e) => {
-                                e.stopPropagation();
-                                speakText(globalSummary.flashcards[currentFlashcardIndex].french);
-                              }} />
-                              <span className="text-sm font-bold">點擊翻面查看解釋</span>
+                            <div className="mt-10 flex items-center gap-3">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  speakText(globalSummary.flashcards[currentFlashcardIndex].french);
+                                }}
+                                className={cn(
+                                  "p-3 rounded-2xl transition-all",
+                                  isSpeaking ? "bg-duo-blue/20 text-duo-blue animate-pulse" : "text-duo-blue hover:bg-duo-blue/10"
+                                )}
+                              >
+                                <Volume2 className="w-6 h-6" />
+                              </button>
+                              <span className="text-sm font-bold text-duo-blue">點擊翻面查看解釋</span>
                             </div>
                           </div>
 
@@ -2060,14 +2186,29 @@ export default function App() {
                         <p className="text-sm font-bold text-duo-gray">根據你累積的單字量身打造的閱讀與造句練習</p>
                       </div>
                     </div>
-                    <button 
-                      onClick={generateDailyStory}
-                      disabled={isGeneratingDaily}
-                      className="text-sm font-bold text-duo-blue hover:text-duo-blue/80 transition-colors bg-duo-blue/5 px-4 py-2 rounded-xl flex items-center gap-2"
-                    >
-                      <RefreshCw className={cn("w-4 h-4", isGeneratingDaily && "animate-spin")} />
-                      產出新短文
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setIsSlowMode(!isSlowMode)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl transition-all duration-300 flex items-center gap-2 border-2",
+                          isSlowMode 
+                            ? "bg-duo-yellow/10 border-duo-yellow text-duo-yellow" 
+                            : "bg-white border-duo-border text-duo-gray hover:border-duo-blue/30"
+                        )}
+                      >
+                        <span className="text-xs font-black uppercase tracking-wider">
+                          {isSlowMode ? "慢速 0.5x" : "正常 0.85x"}
+                        </span>
+                      </button>
+                      <button 
+                        onClick={generateDailyStory}
+                        disabled={isGeneratingDaily}
+                        className="text-sm font-bold text-duo-blue hover:text-duo-blue/80 transition-colors bg-duo-blue/5 px-4 py-2 rounded-xl flex items-center gap-2"
+                      >
+                        <RefreshCw className={cn("w-4 h-4", isGeneratingDaily && "animate-spin")} />
+                        產出新短文
+                      </button>
+                    </div>
                   </div>
 
                   {isGeneratingDaily ? (
@@ -2083,7 +2224,12 @@ export default function App() {
                           <h3 className="text-2xl font-black text-duo-dark font-display">{dailyStory.title}</h3>
                           <button 
                             onClick={() => speakText(dailyStory.story)}
-                            className="w-12 h-12 bg-white rounded-2xl border-2 border-duo-border flex items-center justify-center text-duo-blue hover:bg-duo-blue hover:text-white transition-all shadow-sm"
+                            className={cn(
+                              "w-12 h-12 rounded-2xl border-2 flex items-center justify-center transition-all shadow-sm",
+                              isSpeaking 
+                                ? "bg-duo-blue/20 border-duo-blue text-duo-blue animate-pulse" 
+                                : "bg-white border-duo-border text-duo-blue hover:bg-duo-blue hover:text-white"
+                            )}
                           >
                             <Volume2 className="w-6 h-6" />
                           </button>
@@ -2106,7 +2252,13 @@ export default function App() {
                               <p className="text-lg font-black text-duo-dark group-hover:text-duo-blue transition-colors">{v.word}</p>
                               <p className="text-sm font-bold text-duo-gray">{v.meaning}</p>
                             </div>
-                            <button onClick={() => speakText(v.word)} className="text-duo-gray hover:text-duo-blue transition-colors">
+                            <button 
+                              onClick={() => speakText(v.word)} 
+                              className={cn(
+                                "p-2 rounded-xl transition-all",
+                                isSpeaking ? "bg-duo-blue/20 text-duo-blue animate-pulse" : "text-duo-gray hover:text-duo-blue hover:bg-duo-blue/5"
+                              )}
+                            >
                               <Volume2 className="w-5 h-5" />
                             </button>
                           </div>
@@ -2200,6 +2352,27 @@ export default function App() {
                     exit={{ opacity: 0, y: -20 }}
                     className="space-y-6"
                   >
+                    <div className="flex items-center justify-between bg-white p-4 rounded-2xl border-2 border-duo-border/50 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-duo-blue/10 rounded-lg flex items-center justify-center">
+                          <BookOpen className="w-4 h-4 text-duo-blue" />
+                        </div>
+                        <span className="text-sm font-bold text-duo-dark">已學習單元 ({history.length})</span>
+                      </div>
+                      <button 
+                        onClick={() => setIsSlowMode(!isSlowMode)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl transition-all duration-300 flex items-center gap-2 border-2",
+                          isSlowMode 
+                            ? "bg-duo-yellow/10 border-duo-yellow text-duo-yellow" 
+                            : "bg-white border-duo-border text-duo-gray hover:border-duo-blue/30"
+                        )}
+                      >
+                        <span className="text-xs font-black uppercase tracking-wider">
+                          {isSlowMode ? "慢速 0.5x" : "正常 0.85x"}
+                        </span>
+                      </button>
+                    </div>
                     {history.map((item) => (
                       <motion.div
                         key={item.id}
@@ -2254,7 +2427,12 @@ export default function App() {
                                       </h4>
                                       <button 
                                         onClick={() => speakText(item.lessonText, true)}
-                                        className="p-3 bg-duo-light rounded-2xl shadow-sm hover:bg-duo-blue hover:text-white transition-all text-duo-blue hover:scale-110 active:scale-95"
+                                        className={cn(
+                                          "p-3 rounded-2xl shadow-sm transition-all hover:scale-110 active:scale-95",
+                                          isSpeaking 
+                                            ? "bg-duo-blue/20 text-duo-blue animate-pulse border-2 border-duo-blue" 
+                                            : "bg-duo-light text-duo-blue hover:bg-duo-blue hover:text-white"
+                                        )}
                                         title="朗讀課文"
                                       >
                                         <Volume2 className="w-5 h-5" />
@@ -2369,12 +2547,15 @@ export default function App() {
                         <button 
                           onClick={() => setIsSlowMode(!isSlowMode)}
                           className={cn(
-                            "p-3 rounded-2xl transition-all duration-300 flex items-center gap-2",
-                            isSlowMode ? "bg-duo-yellow/10 text-duo-yellow" : "bg-duo-light text-duo-gray"
+                            "px-4 py-2 rounded-xl transition-all duration-300 flex items-center gap-2 border-2",
+                            isSlowMode 
+                              ? "bg-duo-yellow/10 border-duo-yellow text-duo-yellow" 
+                              : "bg-white border-duo-border text-duo-gray hover:border-duo-blue/30"
                           )}
-                          title={isSlowMode ? "慢速模式" : "正常速度"}
                         >
-                          <span className="text-[10px] font-black">0.6x</span>
+                          <span className="text-xs font-black uppercase tracking-wider">
+                            {isSlowMode ? "慢速 0.5x" : "正常 0.85x"}
+                          </span>
                         </button>
                         <button 
                           onClick={() => setIsAutoSpeak(!isAutoSpeak)}
@@ -2412,7 +2593,12 @@ export default function App() {
                             {msg.role === 'model' && (
                               <button 
                                 onClick={() => speakText(msg.text, true)}
-                                className="mt-0.5 p-1.5 hover:bg-duo-light rounded-xl transition-colors text-duo-blue"
+                                className={cn(
+                                  "mt-0.5 p-1.5 rounded-xl transition-all",
+                                  isSpeaking 
+                                    ? "bg-duo-blue/20 text-duo-blue animate-pulse" 
+                                    : "hover:bg-duo-light text-duo-blue"
+                                )}
                               >
                                 <Volume2 className="w-4 h-4" />
                               </button>
