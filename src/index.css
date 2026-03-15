@@ -107,7 +107,16 @@
   }
 
   .handwriting-canvas, 
-  .handwriting-canvas > div,
+  .handwriting-canvas > div {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+
+  /* 強制隱藏 react-canvas-draw 的背景/網格層，這是造成空白的主因 */
+  .handwriting-canvas canvas:first-child {
+    display: none !important;
+  }
+
   .handwriting-canvas canvas {
     cursor: crosshair !important;
     background-color: transparent !important;
