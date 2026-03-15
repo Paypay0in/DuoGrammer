@@ -25,6 +25,8 @@ interface AnalysisResult {
   practicePrompt: string;
   timestamp: number;
   duoLocation?: string; // Manual input for Duolingo chapter/section
+  category?: string; // For folders/categorization
+  drawingData?: string; // Per-unit handwriting data
 }
 
 interface ChatMessage {
@@ -133,6 +135,8 @@ export default function App() {
     }
   };
   const [activeTab, setActiveTab] = useState<'study' | 'practice' | 'summary' | 'flashcards' | 'daily'>('study');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const categories = ['all', ...Array.from(new Set(history.map(item => item.category).filter(Boolean)))];
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatting, setIsChatting] = useState(false);
   const [userInput, setUserInput] = useState('');
@@ -167,22 +171,48 @@ export default function App() {
   });
 
   const saveDrawing = () => {
-    if (canvasRef.current && globalSummary) {
+    if (canvasRef.current) {
       const data = canvasRef.current.getSaveData();
-      const newDrawings = { ...savedDrawings, [globalSummary.timestamp]: data };
-      setSavedDrawings(newDrawings);
-      localStorage.setItem('duo_grammar_drawings', JSON.stringify(newDrawings));
+      let key = '';
+      
+      if (activeTab === 'summary' && globalSummary) {
+        key = `summary_${globalSummary.timestamp}`;
+      } else if (activeTab === 'study' && currentAnalysis) {
+        key = `unit_${currentAnalysis.id}`;
+        // Also update history to persist drawing data
+        setHistory(prev => {
+          const newHistory = prev.map(item => item.id === currentAnalysis.id ? { ...item, drawingData: data } : item);
+          safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+          return newHistory;
+        });
+      }
+      
+      if (key) {
+        const newDrawings = { ...savedDrawings, [key]: data };
+        setSavedDrawings(newDrawings);
+        localStorage.setItem('duo_grammar_drawings', JSON.stringify(newDrawings));
+      }
     }
   };
 
   useEffect(() => {
-    if (isDrawingEnabled && canvasRef.current && globalSummary && savedDrawings[globalSummary.timestamp]) {
-      // Small delay to ensure canvas is ready
-      setTimeout(() => {
-        canvasRef.current.loadSaveData(savedDrawings[globalSummary.timestamp], true);
-      }, 100);
+    if (isDrawingEnabled && canvasRef.current) {
+      let key = '';
+      if (activeTab === 'summary' && globalSummary) {
+        key = `summary_${globalSummary.timestamp}`;
+      } else if (activeTab === 'study' && currentAnalysis) {
+        key = `unit_${currentAnalysis.id}`;
+      }
+      
+      if (key && savedDrawings[key]) {
+        setTimeout(() => {
+          canvasRef.current.loadSaveData(savedDrawings[key], true);
+        }, 100);
+      } else {
+        canvasRef.current.clear();
+      }
     }
-  }, [isDrawingEnabled, globalSummary?.timestamp]);
+  }, [isDrawingEnabled, globalSummary?.timestamp, currentAnalysis?.id, activeTab]);
 
   const toggleDrawing = () => {
     if (isDrawingEnabled) {
@@ -1760,9 +1790,23 @@ export default function App() {
                       <div>
                         <h2 className="text-3xl font-extrabold text-duo-dark font-display">語法知識庫統整</h2>
                         {globalSummary && (
-                          <p className="text-xs font-bold text-duo-gray mt-1 uppercase tracking-wider">
-                            產出時間：{new Date(globalSummary.timestamp).toLocaleString()}
-                          </p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <p className="text-xs font-bold text-duo-gray uppercase tracking-wider">
+                              產出時間：{new Date(globalSummary.timestamp).toLocaleString()}
+                            </p>
+                            <button 
+                              onClick={toggleDrawing}
+                              className={cn(
+                                "flex items-center gap-1.5 px-3 py-1 rounded-lg font-black text-[10px] transition-all shadow-sm border-2",
+                                isDrawingEnabled 
+                                  ? "bg-duo-blue text-white border-duo-blue" 
+                                  : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
+                              )}
+                            >
+                              {isDrawingEnabled ? <Save className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
+                              {isDrawingEnabled ? "儲存筆記" : "手寫筆記"}
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1816,39 +1860,20 @@ export default function App() {
                     {globalSummary && globalSummary.content ? (
                       <>
                         <div className="bg-duo-light/30 rounded-[32px] border-2 border-duo-border overflow-hidden">
-                          <button 
+                          <div 
                             onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
-                            className="w-full px-8 py-6 flex items-center justify-between hover:bg-duo-light/50 transition-colors group"
+                            className="w-full px-8 py-6 flex items-center justify-between hover:bg-duo-light/50 transition-colors group cursor-pointer"
                           >
                             <div className="flex items-center gap-4">
-                              <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-duo-border group-hover:border-duo-blue/30 transition-colors">
-                                  <BookOpen className="w-5 h-5 text-duo-blue" />
-                                </div>
-                                <span className="text-xl font-extrabold text-duo-dark font-display">系統化筆記內容</span>
+                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-duo-border group-hover:border-duo-blue/30 transition-colors">
+                                <BookOpen className="w-5 h-5 text-duo-blue" />
                               </div>
-                              
-                              {/* New Prominent Handwriting Button */}
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleDrawing();
-                                }}
-                                className={cn(
-                                  "ml-4 flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all shadow-sm border-2 z-30",
-                                  isDrawingEnabled 
-                                    ? "bg-duo-blue text-white border-duo-blue" 
-                                    : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
-                                )}
-                              >
-                                {isDrawingEnabled ? <Save className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
-                                {isDrawingEnabled ? "儲存筆記" : "手寫筆記"}
-                              </button>
+                              <span className="text-xl font-extrabold text-duo-dark font-display">系統化筆記內容</span>
                             </div>
                             <div className={cn("transition-transform duration-300", !isSummaryExpanded && "rotate-180")}>
                               <ChevronUp className="w-6 h-6 text-duo-gray" />
                             </div>
-                          </button>
+                          </div>
                           
                           <motion.div 
                             initial={false}
@@ -2504,13 +2529,31 @@ export default function App() {
                     exit={{ opacity: 0, y: -20 }}
                     className="space-y-6"
                   >
-                    <div className="flex items-center justify-between bg-white p-4 rounded-2xl border-2 border-duo-border/50 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border-2 border-duo-border/50 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-duo-blue/10 rounded-lg flex items-center justify-center">
                           <BookOpen className="w-4 h-4 text-duo-blue" />
                         </div>
                         <span className="text-sm font-bold text-duo-dark">已學習單元 ({history.length})</span>
                       </div>
+                      
+                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+                        {categories.map(cat => (
+                          <button
+                            key={cat}
+                            onClick={() => setSelectedCategory(cat || 'all')}
+                            className={cn(
+                              "px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border-2 whitespace-nowrap",
+                              selectedCategory === cat 
+                                ? "bg-duo-blue border-duo-blue text-white shadow-md" 
+                                : "bg-white border-duo-border text-duo-gray hover:border-duo-blue/30"
+                            )}
+                          >
+                            {cat === 'all' ? '全部' : cat}
+                          </button>
+                        ))}
+                      </div>
+
                       <button 
                         onClick={() => setIsSlowMode(!isSlowMode)}
                         className={cn(
@@ -2525,7 +2568,9 @@ export default function App() {
                         </span>
                       </button>
                     </div>
-                    {history.map((item) => (
+                    {history
+                      .filter(item => selectedCategory === 'all' || item.category === selectedCategory)
+                      .map((item) => (
                       <motion.div
                         key={item.id}
                         layout
@@ -2569,34 +2614,135 @@ export default function App() {
                               className="border-t-2 border-duo-border/30"
                             >
                               <div className="p-6 sm:p-12 space-y-10 bg-gradient-to-b from-white to-duo-light/30">
-                                {/* Original Text Section */}
-                                {item.lessonText && (
-                                  <div className="bg-white rounded-[32px] p-8 border-2 border-duo-border relative group shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="flex items-center justify-between mb-6">
-                                      <h4 className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] flex items-center gap-2.5">
-                                        <div className="w-2 h-2 bg-duo-blue rounded-full animate-pulse" />
-                                        課文原文
-                                      </h4>
+                                {/* Category & Handwriting Control */}
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/50 p-4 rounded-2xl border-2 border-duo-border/50">
+                                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                                    <div className="w-8 h-8 bg-duo-blue/10 rounded-lg flex items-center justify-center">
+                                      <History className="w-4 h-4 text-duo-blue" />
+                                    </div>
+                                    <div className="flex-1 sm:flex-none">
+                                      <input 
+                                        type="text"
+                                        placeholder="設定分類 (例如: 形容詞)"
+                                        className="w-full sm:w-48 bg-transparent text-sm font-bold text-duo-dark focus:outline-none border-b-2 border-duo-border focus:border-duo-blue transition-colors px-1 py-0.5"
+                                        value={item.category || ''}
+                                        onChange={(e) => {
+                                          const newCat = e.target.value;
+                                          setHistory(prev => {
+                                            const newHistory = prev.map(h => h.id === item.id ? { ...h, category: newCat } : h);
+                                            safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+                                            return newHistory;
+                                          });
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  <button 
+                                    onClick={toggleDrawing}
+                                    className={cn(
+                                      "flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-sm transition-all shadow-sm border-2 w-full sm:w-auto justify-center",
+                                      isDrawingEnabled 
+                                        ? "bg-duo-blue text-white border-duo-blue" 
+                                        : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
+                                    )}
+                                  >
+                                    {isDrawingEnabled ? <Save className="w-5 h-5" /> : <Pencil className="w-5 h-5" />}
+                                    {isDrawingEnabled ? "儲存筆記" : "手寫筆記"}
+                                  </button>
+                                </div>
+
+                                <div className="relative min-h-[400px]">
+                                  {/* Drawing Toolbar */}
+                                  {isDrawingEnabled && (
+                                    <div className="absolute top-0 right-0 z-20 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
                                       <button 
-                                        onClick={() => speakText(item.lessonText, true)}
-                                        className={cn(
-                                          "p-3 rounded-2xl shadow-sm transition-all hover:scale-110 active:scale-95",
-                                          isSpeaking 
-                                            ? "bg-duo-blue/20 text-duo-blue animate-pulse border-2 border-duo-blue" 
-                                            : "bg-duo-light text-duo-blue hover:bg-duo-blue hover:text-white"
-                                        )}
-                                        title="朗讀課文"
+                                        onClick={() => setPenColor("#1cb0f6")}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" ? "border-duo-dark scale-110" : "border-transparent")}
+                                        style={{ backgroundColor: "#1cb0f6" }}
+                                      />
+                                      <button 
+                                        onClick={() => setPenColor("#ff4b4b")}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" ? "border-duo-dark scale-110" : "border-transparent")}
+                                        style={{ backgroundColor: "#ff4b4b" }}
+                                      />
+                                      <button 
+                                        onClick={() => setPenColor("#58cc02")}
+                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" ? "border-duo-dark scale-110" : "border-transparent")}
+                                        style={{ backgroundColor: "#58cc02" }}
+                                      />
+                                      <button 
+                                        onClick={() => setPenColor("transparent")}
+                                        className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
+                                        title="橡皮擦"
                                       >
-                                        <Volume2 className="w-5 h-5" />
+                                        <Eraser className="w-5 h-5" />
+                                      </button>
+                                      <div className="w-full h-0.5 bg-duo-border my-1" />
+                                      <div className="flex flex-col items-center gap-1 py-1">
+                                        <span className="text-[8px] font-black text-duo-gray">粗細</span>
+                                        <input 
+                                          type="range" 
+                                          min="1" 
+                                          max="10" 
+                                          value={brushRadius} 
+                                          onChange={(e) => setBrushRadius(parseInt(e.target.value))}
+                                          className="w-12 h-1 bg-duo-border rounded-lg appearance-none cursor-pointer accent-duo-blue"
+                                        />
+                                      </div>
+                                      <div className="w-full h-0.5 bg-duo-border my-1" />
+                                      <button 
+                                        onClick={() => canvasRef.current?.undo()}
+                                        className="p-2 hover:bg-duo-light rounded-xl text-duo-gray transition-all"
+                                        title="復原"
+                                      >
+                                        <History className="w-5 h-5" />
+                                      </button>
+                                      <button 
+                                        onClick={() => canvasRef.current?.clear()}
+                                        className="p-2 hover:bg-duo-red/10 text-duo-red rounded-xl transition-all"
+                                        title="清除全部"
+                                      >
+                                        <Trash2 className="w-5 h-5" />
                                       </button>
                                     </div>
-                                    <p className="text-2xl font-bold text-duo-dark leading-relaxed italic font-display">
-                                      "{item.lessonText}"
-                                    </p>
-                                  </div>
-                                )}
+                                  )}
 
-                                  <div className="markdown-body">
+                                  {isDrawingEnabled && (
+                                    <div className="absolute -top-6 left-0 z-20 flex items-center gap-2 px-4 py-2 bg-duo-blue/10 text-duo-blue rounded-xl text-[10px] font-bold animate-pulse">
+                                      <Sparkles className="w-3 h-3" />
+                                      支援 Apple Pencil 繪圖中...
+                                    </div>
+                                  )}
+
+                                  <div ref={contentRef} className="markdown-body relative z-10">
+                                    {/* Original Text Section */}
+                                    {item.lessonText && (
+                                      <div className="bg-white rounded-[32px] p-8 border-2 border-duo-border relative group shadow-sm hover:shadow-md transition-shadow mb-10">
+                                        <div className="flex items-center justify-between mb-6">
+                                          <h4 className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] flex items-center gap-2.5">
+                                            <div className="w-2 h-2 bg-duo-blue rounded-full animate-pulse" />
+                                            課文原文
+                                          </h4>
+                                          <button 
+                                            onClick={() => speakText(item.lessonText, true)}
+                                            className={cn(
+                                              "p-3 rounded-2xl shadow-sm transition-all hover:scale-110 active:scale-95",
+                                              isSpeaking 
+                                                ? "bg-duo-blue/20 text-duo-blue animate-pulse border-2 border-duo-blue" 
+                                                : "bg-duo-light text-duo-blue hover:bg-duo-blue hover:text-white"
+                                            )}
+                                            title="朗讀課文"
+                                          >
+                                            <Volume2 className="w-5 h-5" />
+                                          </button>
+                                        </div>
+                                        <p className="text-2xl font-bold text-duo-dark leading-relaxed italic font-display">
+                                          "{item.lessonText}"
+                                        </p>
+                                      </div>
+                                    )}
+
                                     <Markdown
                                       remarkPlugins={[remarkGfm]}
                                       components={{
@@ -2616,6 +2762,31 @@ export default function App() {
                                       {item.explanation}
                                     </Markdown>
                                   </div>
+
+                                  {isDrawingEnabled && (
+                                    <div className="absolute inset-0 z-20 pointer-events-auto">
+                                      <CanvasDraw
+                                        ref={canvasRef}
+                                        brushColor={penColor === "transparent" ? "#ffffff" : penColor}
+                                        brushRadius={brushRadius}
+                                        lazyRadius={0}
+                                        canvasWidth="100%"
+                                        canvasHeight={canvasHeight}
+                                        backgroundColor="transparent"
+                                        hideGrid
+                                        className="handwriting-canvas"
+                                        style={{
+                                          position: 'absolute',
+                                          top: 0,
+                                          left: 0,
+                                          width: '100%',
+                                          height: '100%',
+                                          background: 'transparent'
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
 
                                   {/* Unit Specific Q&A */}
                                   <div className="mt-12 pt-10 border-t-2 border-duo-border/30">
