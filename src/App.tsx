@@ -145,11 +145,11 @@ export default function App() {
   const [isSlowMode, setIsSlowMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
-  const [isDrawingEnabled, setIsDrawingEnabled] = useState(false);
+  const [activeDrawingId, setActiveDrawingId] = useState<string | null>(null);
   const [penColor, setPenColor] = useState("#1cb0f6");
   const [brushRadius, setBrushRadius] = useState(2);
   const [canvasHeight, setCanvasHeight] = useState(400);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const unitRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const canvasRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -171,17 +171,17 @@ export default function App() {
   });
 
   const saveDrawing = () => {
-    if (canvasRef.current) {
+    if (canvasRef.current && activeDrawingId) {
       const data = canvasRef.current.getSaveData();
       let key = '';
       
-      if (activeTab === 'summary' && globalSummary) {
+      if (activeDrawingId === 'summary' && globalSummary) {
         key = `summary_${globalSummary.timestamp}`;
-      } else if (activeTab === 'study' && currentAnalysis) {
-        key = `unit_${currentAnalysis.id}`;
+      } else if (activeDrawingId !== 'summary') {
+        key = `unit_${activeDrawingId}`;
         // Also update history to persist drawing data
         setHistory(prev => {
-          const newHistory = prev.map(item => item.id === currentAnalysis.id ? { ...item, drawingData: data } : item);
+          const newHistory = prev.map(item => item.id === activeDrawingId ? { ...item, drawingData: data } : item);
           safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
           return newHistory;
         });
@@ -196,12 +196,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (isDrawingEnabled && canvasRef.current) {
+    if (activeDrawingId && canvasRef.current) {
       let key = '';
-      if (activeTab === 'summary' && globalSummary) {
+      if (activeDrawingId === 'summary' && globalSummary) {
         key = `summary_${globalSummary.timestamp}`;
-      } else if (activeTab === 'study' && currentAnalysis) {
-        key = `unit_${currentAnalysis.id}`;
+      } else if (activeDrawingId !== 'summary') {
+        key = `unit_${activeDrawingId}`;
       }
       
       if (key && savedDrawings[key]) {
@@ -212,25 +212,27 @@ export default function App() {
         canvasRef.current.clear();
       }
     }
-  }, [isDrawingEnabled, globalSummary?.timestamp, currentAnalysis?.id, activeTab]);
+  }, [activeDrawingId, globalSummary?.timestamp, activeTab]);
 
-  const toggleDrawing = () => {
-    if (isDrawingEnabled) {
+  const toggleDrawing = (id?: string) => {
+    const targetId = id || 'summary';
+    if (activeDrawingId === targetId) {
       saveDrawing();
+      setActiveDrawingId(null);
+    } else {
+      setActiveDrawingId(targetId);
+      // Give a small delay to ensure the DOM is ready for measurement
+      setTimeout(() => {
+        const element = targetId === 'summary' ? unitRefs.current['summary'] : unitRefs.current[targetId];
+        if (element) {
+          setCanvasHeight(element.scrollHeight + 100);
+        }
+      }, 100);
     }
-    setIsDrawingEnabled(!isDrawingEnabled);
   };
 
   useEffect(() => {
-    if (!contentRef.current) return;
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        // Use scrollHeight to ensure the canvas covers the entire content
-        setCanvasHeight(entry.target.scrollHeight + 100); 
-      }
-    });
-    resizeObserver.observe(contentRef.current);
-    return () => resizeObserver.disconnect();
+    // Height calculation is now handled in toggleDrawing and ResizeObserver
   }, [globalSummary, currentAnalysis, activeTab]);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
@@ -1796,16 +1798,16 @@ export default function App() {
                               產出時間：{new Date(globalSummary.timestamp).toLocaleString()}
                             </p>
                             <button 
-                              onClick={toggleDrawing}
+                              onClick={() => toggleDrawing('summary')}
                               className={cn(
                                 "flex items-center gap-1.5 px-3 py-1 rounded-lg font-black text-[10px] transition-all shadow-sm border-2",
-                                isDrawingEnabled 
+                                activeDrawingId === 'summary' 
                                   ? "bg-duo-blue text-white border-duo-blue" 
                                   : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
                               )}
                             >
-                              {isDrawingEnabled ? <Save className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
-                              {isDrawingEnabled ? "儲存筆記" : "手寫筆記"}
+                              {activeDrawingId === 'summary' ? <Save className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
+                              {activeDrawingId === 'summary' ? "儲存筆記" : "手寫筆記"}
                             </button>
                           </div>
                         )}
@@ -1884,8 +1886,8 @@ export default function App() {
                             <div className="p-4 sm:p-8 pt-0 border-t-2 border-duo-border/30">
                               <div className="relative mt-6 min-h-[400px]">
                                 {/* Drawing Toolbar */}
-                                {isDrawingEnabled && (
-                                  <div className="absolute top-0 right-0 z-20 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
+                                {activeDrawingId === 'summary' && (
+                                  <div className="absolute top-0 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
                                     <button 
                                       onClick={() => setPenColor("#1cb0f6")}
                                       className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" ? "border-duo-dark scale-110" : "border-transparent")}
@@ -1938,14 +1940,14 @@ export default function App() {
                                   </div>
                                 )}
 
-                                {isDrawingEnabled && (
-                                  <div className="absolute -top-6 left-0 z-20 flex items-center gap-2 px-4 py-2 bg-duo-blue/10 text-duo-blue rounded-xl text-[10px] font-bold animate-pulse">
-                                    <Sparkles className="w-3 h-3" />
-                                    支援 Apple Pencil 繪圖中...
+                                {activeDrawingId === 'summary' && (
+                                  <div className="absolute -top-6 left-0 z-30 flex items-center gap-2 px-4 py-2 bg-duo-blue/10 text-duo-blue rounded-xl text-[10px] font-bold animate-pulse">
+                                    <History className="w-3 h-3" />
+                                    手寫模式已開啟
                                   </div>
                                 )}
 
-                                <div ref={contentRef} className="markdown-body relative z-10">
+                                <div ref={el => { unitRefs.current['summary'] = el; }} className="markdown-body relative z-10">
                                   <Markdown
                                     remarkPlugins={[remarkGfm]}
                                     components={{
@@ -1966,7 +1968,7 @@ export default function App() {
                                   </Markdown>
                                 </div>
 
-                                {isDrawingEnabled && (
+                                {activeDrawingId === 'summary' && (
                                   <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
                                     <CanvasDraw
                                       ref={canvasRef}
@@ -1974,7 +1976,7 @@ export default function App() {
                                       brushRadius={brushRadius}
                                       lazyRadius={0}
                                       canvasWidth="100%"
-                                      canvasHeight={canvasHeight || 500}
+                                      canvasHeight={canvasHeight}
                                       backgroundColor="rgba(0,0,0,0)"
                                       gridColor="rgba(0,0,0,0)"
                                       hideGrid={true}
@@ -2637,23 +2639,23 @@ export default function App() {
                                   </div>
                                   
                                   <button 
-                                    onClick={toggleDrawing}
+                                    onClick={() => toggleDrawing(item.id)}
                                     className={cn(
                                       "flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-sm transition-all shadow-sm border-2 w-full sm:w-auto justify-center",
-                                      isDrawingEnabled 
+                                      activeDrawingId === item.id 
                                         ? "bg-duo-blue text-white border-duo-blue" 
                                         : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
                                     )}
                                   >
-                                    {isDrawingEnabled ? <Save className="w-5 h-5" /> : <Pencil className="w-5 h-5" />}
-                                    {isDrawingEnabled ? "儲存筆記" : "手寫筆記"}
+                                    {activeDrawingId === item.id ? <Save className="w-5 h-5" /> : <Pencil className="w-5 h-5" />}
+                                    {activeDrawingId === item.id ? "儲存筆記" : "手寫筆記"}
                                   </button>
                                 </div>
 
                                 <div className="relative min-h-[400px]">
                                   {/* Drawing Toolbar */}
-                                  {isDrawingEnabled && (
-                                    <div className="absolute top-0 right-0 z-20 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
+                                  {activeDrawingId === item.id && (
+                                    <div className="absolute top-0 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
                                       <button 
                                         onClick={() => setPenColor("#1cb0f6")}
                                         className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" ? "border-duo-dark scale-110" : "border-transparent")}
@@ -2706,14 +2708,17 @@ export default function App() {
                                     </div>
                                   )}
 
-                                  {isDrawingEnabled && (
-                                    <div className="absolute -top-6 left-0 z-20 flex items-center gap-2 px-4 py-2 bg-duo-blue/10 text-duo-blue rounded-xl text-[10px] font-bold animate-pulse">
-                                      <Sparkles className="w-3 h-3" />
-                                      支援 Apple Pencil 繪圖中...
+                                  {activeDrawingId === item.id && (
+                                    <div className="absolute -top-6 left-0 z-30 flex items-center gap-2 px-4 py-2 bg-duo-blue/10 text-duo-blue rounded-xl text-[10px] font-bold animate-pulse">
+                                      <History className="w-3 h-3" />
+                                      手寫模式已開啟
                                     </div>
                                   )}
 
-                                  <div ref={contentRef} className="markdown-body relative z-10">
+                                  <div 
+                                    ref={el => { unitRefs.current[item.id] = el; }} 
+                                    className="markdown-body relative z-10"
+                                  >
                                     {/* Original Text Section */}
                                     {item.lessonText && (
                                       <div className="bg-white rounded-[32px] p-8 border-2 border-duo-border relative group shadow-sm hover:shadow-md transition-shadow mb-10">
@@ -2761,7 +2766,7 @@ export default function App() {
                                     </Markdown>
                                   </div>
 
-                                    {isDrawingEnabled && (
+                                    {activeDrawingId === item.id && (
                                       <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
                                         <CanvasDraw
                                           ref={canvasRef}
@@ -2769,7 +2774,7 @@ export default function App() {
                                           brushRadius={brushRadius}
                                           lazyRadius={0}
                                           canvasWidth="100%"
-                                          canvasHeight={canvasHeight || 500}
+                                          canvasHeight={canvasHeight}
                                           backgroundColor="rgba(0,0,0,0)"
                                           gridColor="rgba(0,0,0,0)"
                                           hideGrid={true}
