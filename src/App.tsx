@@ -78,6 +78,39 @@ export default function App() {
     }
   });
   const [showHistory, setShowHistory] = useState(false);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+
+  const syncToCloud = async () => {
+    if (history.length === 0 && !globalSummary) {
+      setShowToast('沒有資料可以同步');
+      return;
+    }
+    
+    setIsManualSyncing(true);
+    setSyncStatus('syncing');
+    try {
+      const userId = 'default_user';
+      const { error } = await supabase
+        .from('duo_grammar_data')
+        .upsert({ 
+          id: userId, 
+          history: history,
+          summary: globalSummary,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      setSyncStatus('success');
+      setShowToast('同步成功！資料已上傳雲端');
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    } catch (error) {
+      console.error('Manual sync error:', error);
+      setSyncStatus('error');
+      setShowToast('同步失敗，請檢查網路');
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
 
   const updateUnitLocation = (id: string, location: string) => {
     setHistory(prev => {
@@ -1107,17 +1140,30 @@ export default function App() {
                   動詞閃卡
                 </button>
               </div>
-            <button 
-              onClick={() => setShowHistory(!showHistory)}
-              className="p-3 hover:bg-duo-light rounded-2xl transition-all relative group"
-            >
-              <History className="w-6 h-6 text-duo-gray group-hover:text-duo-blue transition-colors" />
-              {history.length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-duo-red text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                  {history.length}
-                </span>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={syncToCloud}
+                disabled={isManualSyncing}
+                className={cn(
+                  "p-3 rounded-2xl transition-all relative group",
+                  syncStatus === 'error' ? "bg-duo-red/10 text-duo-red" : "hover:bg-duo-light text-duo-gray"
+                )}
+                title="同步至雲端"
+              >
+                <RefreshCw className={cn("w-6 h-6 group-hover:text-duo-blue transition-colors", isManualSyncing && "animate-spin text-duo-blue")} />
+              </button>
+              <button 
+                onClick={() => setShowHistory(!showHistory)}
+                className="p-3 hover:bg-duo-light rounded-2xl transition-all relative group"
+              >
+                <History className="w-6 h-6 text-duo-gray group-hover:text-duo-blue transition-colors" />
+                {history.length > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-duo-red text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                    {history.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </header>
