@@ -58,19 +58,13 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     return () => observer.disconnect();
   }, []);
 
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
+  const getCoordinates = (e: React.PointerEvent | PointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     
-    let clientX, clientY;
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = (e as MouseEvent).clientX;
-      clientY = (e as MouseEvent).clientY;
-    }
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
     // Since we synced internal width/height with rect.width/height, 
     // the coordinates are direct.
@@ -80,10 +74,10 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     };
   };
 
-  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+  const startDrawing = (e: React.PointerEvent | PointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
     if (!ctx) return;
 
     // Save current state to history
@@ -102,10 +96,10 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
       ctx.globalAlpha = 1.0;
       ctx.strokeStyle = '#ffffff';
     } else if (isHighlighter) {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 0.4; // Semi-transparent for highlighter
-      ctx.strokeStyle = color;
-      ctx.lineWidth = radius * 6; // Highlighters are usually thicker
+      ctx.globalCompositeOperation = 'multiply'; // Better for highlighters to not obscure text
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = color === '#ffeb3b' ? 'rgba(255, 235, 59, 0.5)' : color;
+      ctx.lineWidth = radius * 8;
     } else {
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
@@ -113,9 +107,10 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     }
 
     setIsDrawing(true);
+    (e.target as Element).setPointerCapture(e.pointerId);
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+  const draw = (e: React.PointerEvent | PointerEvent) => {
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -127,8 +122,15 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     ctx.stroke();
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = (e: React.PointerEvent | PointerEvent) => {
     setIsDrawing(false);
+    if (e.pointerId !== undefined) {
+      try {
+        (e.target as Element).releasePointerCapture(e.pointerId);
+      } catch (err) {
+        // Ignore errors if pointer capture was already released
+      }
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -187,13 +189,11 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         backgroundColor: 'transparent',
         display: 'block'
       }}
-      onMouseDown={startDrawing}
-      onMouseMove={draw}
-      onMouseUp={stopDrawing}
-      onMouseOut={stopDrawing}
-      onTouchStart={startDrawing}
-      onTouchMove={draw}
-      onTouchEnd={stopDrawing}
+      onPointerDown={startDrawing}
+      onPointerMove={draw}
+      onPointerUp={stopDrawing}
+      onPointerCancel={stopDrawing}
+      onPointerOut={stopDrawing}
     />
   );
 });

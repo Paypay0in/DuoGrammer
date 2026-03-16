@@ -91,6 +91,47 @@ export default function App() {
   });
   const [showHistory, setShowHistory] = useState(false);
   const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [isRestructuring, setIsRestructuring] = useState<string | null>(null);
+
+  const restructureWithAI = async (item: AnalysisResult) => {
+    setIsRestructuring(item.id);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const prompt = `
+        你是一個法文教學專家。請將以下這段學習筆記重新排列格式。
+        
+        要求：
+        1. **主標題**：保持 "# 學習筆記"。
+        2. **重點單字**：將 "## 🌟 重點單字 (Key Vocabulary)" 區塊移到最下方（筆記最後面）。
+        3. **內容完整**：不要刪除任何原有的解釋、例句或文法點。
+        4. **整合解析**：確保 "## 💡 核心學習單元" 包含深度整合的解析。
+        
+        原有內容：
+        ${item.explanation}
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ parts: [{ text: prompt }] }]
+      });
+
+      const newContent = response.text || item.explanation;
+      
+      setHistory(prev => {
+        const newHistory = prev.map(h => h.id === item.id ? { ...h, explanation: newContent } : h);
+        safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+        return newHistory;
+      });
+      setShowToast('筆記格式已優化！');
+    } catch (error) {
+      console.error('Restructure error:', error);
+      setShowToast('優化失敗，請稍後再試');
+    } finally {
+      setIsRestructuring(null);
+    }
+  };
 
   const syncToCloud = async () => {
     if (history.length === 0 && !globalSummary) {
@@ -220,8 +261,15 @@ export default function App() {
     if (activeDrawingId === targetId) {
       saveDrawing();
       setActiveDrawingId(null);
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(err => console.error(err));
+      }
     } else {
       setActiveDrawingId(targetId);
+      // Enter fullscreen for better note taking experience
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => console.error(err));
+      }
       // Give a small delay to ensure the DOM is ready for measurement
       setTimeout(() => {
         const element = targetId === 'summary' ? unitRefs.current['summary'] : unitRefs.current[targetId];
@@ -1143,7 +1191,9 @@ export default function App() {
           任務：
           1. **深度提取**：請仔細掃描所有圖片，提取所有對話、句子、生字與語法點。
           2. **專業解析**：提供詳細的文法解釋（包含 Markdown 表格）。
-          3. **格式要求**：務必回傳純 JSON 陣列，不要有 Markdown 區塊。
+          3. **單元整合**：單字跟語法解釋不要分區塊，要成為一個完整的學習單元。
+          4. **重點單字**：每個重點單字必須附帶一個實用的法文例句與中文翻譯。
+          5. **格式要求**：務必回傳純 JSON 陣列，不要有 Markdown 區塊。
           
           回傳格式：
           [
@@ -1153,7 +1203,7 @@ export default function App() {
               "vocabulary": ["單字 - 解釋 - 例句 (必須包含完整法文例句與中文翻譯)"],
               "grammar": "核心文法摘要",
               "practicePrompt": "口語練習開場白",
-              "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析 (Grammar)\\n...\\n\\n## 📚 重點單字 (Vocabulary)\\n...\\n\\n## ⚠️ 常見錯誤 (Common Errors)\\n...",
+              "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 核心學習單元 (單字與語法整合解析)\\n請將單字與對應的語法點整合在一起說明，不要分開成兩個大區塊。例如：在解釋一個動詞時，同時說明它的變位規則與例句。\\n\\n## ⚠️ 常見錯誤 (Common Errors)\\n...\\n\\n## 🌟 重點單字 (Key Vocabulary)\\n請在此處列出本課最重要的單字，每個單字需包含：單字 - 解釋 - 實用法文例句與中文翻譯。",
               "mergeWithExistingTitle": ""
             }
           ]
@@ -1226,6 +1276,10 @@ export default function App() {
         你是一個頂尖的法文教學專家。請將以下多組提取到的內容整合為系統化的學習單元。
         務必回傳純 JSON 陣列。
         
+        任務：
+        1. **單元整合**：單字跟語法解釋不要分區塊，要成為一個完整的學習單元。
+        2. **重點單字**：每個重點單字必須附帶一個實用的法文例句與中文翻譯。
+        
         數據：${combinedData}
         
         回傳格式：
@@ -1236,7 +1290,7 @@ export default function App() {
             "vocabulary": ["單字 - 解釋 - 例句 (必須包含完整法文例句與中文翻譯)"],
             "grammar": "核心文法摘要",
             "practicePrompt": "口語練習開場白",
-            "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 文法解析 (Grammar)\\n...\\n\\n## 📚 重點單字 (Vocabulary)\\n...\\n\\n## ⚠️ 常見錯誤 (Common Errors)\\n...",
+            "fullMarkdown": "# 學習筆記\\n\\n## 📝 課文原文\\n...\\n\\n## 💡 核心學習單元 (單字與語法整合解析)\\n請將單字與對應的語法點整合在一起說明，不要分開成兩個大區塊。\\n\\n## ⚠️ 常見錯誤 (Common Errors)\\n...\\n\\n## 🌟 重點單字 (Key Vocabulary)\\n請在此處列出本課最重要的單字，每個單字需包含：單字 - 解釋 - 實用法文例句與中文翻譯。",
             "mergeWithExistingTitle": ""
           }
         ]
@@ -1641,17 +1695,6 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                
-                <div className="pt-6 border-t border-duo-border/50">
-                  <h4 className="text-xs font-black text-duo-gray uppercase tracking-[0.15em] mb-4">本課重點單字</h4>
-                  <div className="flex flex-wrap gap-2.5">
-                    {currentAnalysis.vocabulary.map((v, i) => (
-                      <span key={i} className="bg-duo-light px-4 py-2 rounded-xl text-sm font-bold text-duo-dark border border-duo-border/50 hover:border-duo-blue/30 transition-colors">
-                        {v}
-                      </span>
-                    ))}
-                  </div>
-                </div>
               </motion.div>
             )}
 
@@ -1887,38 +1930,38 @@ export default function App() {
                             <div className="p-4 sm:p-8 pt-0 border-t-2 border-duo-border/30">
                               <div className="relative mt-6 min-h-[400px]">
                                 {/* Drawing Toolbar */}
-                                {activeDrawingId === 'summary' && (
-                                    <div className="absolute top-0 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
-                                      <button 
-                                        onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
-                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
-                                        style={{ backgroundColor: "#1cb0f6" }}
-                                      />
-                                      <button 
-                                        onClick={() => { setPenColor("#ff4b4b"); setIsHighlighter(false); }}
-                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
-                                        style={{ backgroundColor: "#ff4b4b" }}
-                                      />
-                                      <button 
-                                        onClick={() => { setPenColor("#58cc02"); setIsHighlighter(false); }}
-                                        className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
-                                        style={{ backgroundColor: "#58cc02" }}
-                                      />
-                                      <div className="w-full h-0.5 bg-duo-border my-1" />
-                                      <button 
-                                        onClick={() => { setIsHighlighter(!isHighlighter); if (penColor === 'transparent') setPenColor('#1cb0f6'); }}
-                                        className={cn("p-2 rounded-xl transition-all border-2", isHighlighter ? "bg-yellow-100 border-yellow-400 text-yellow-600" : "bg-white border-duo-border text-duo-gray")}
-                                        title="螢光筆"
-                                      >
-                                        <Highlighter className="w-5 h-5" />
-                                      </button>
-                                      <button 
-                                        onClick={() => { setPenColor("transparent"); setIsHighlighter(false); }}
-                                        className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
-                                        title="橡皮擦"
-                                      >
-                                        <Eraser className="w-5 h-5" />
-                                      </button>
+                                  {activeDrawingId === 'summary' && (
+                                      <div className="sticky top-4 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl self-end">
+                                        <button 
+                                          onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
+                                          className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                                          style={{ backgroundColor: "#1cb0f6" }}
+                                        />
+                                        <button 
+                                          onClick={() => { setPenColor("#ff4b4b"); setIsHighlighter(false); }}
+                                          className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                                          style={{ backgroundColor: "#ff4b4b" }}
+                                        />
+                                        <button 
+                                          onClick={() => { setPenColor("#58cc02"); setIsHighlighter(false); }}
+                                          className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                                          style={{ backgroundColor: "#58cc02" }}
+                                        />
+                                        <div className="w-full h-0.5 bg-duo-border my-1" />
+                                        <button 
+                                          onClick={() => { setPenColor("#ffeb3b"); setIsHighlighter(true); }}
+                                          className={cn("p-2 rounded-xl transition-all border-2", isHighlighter && penColor === "#ffeb3b" ? "bg-yellow-100 border-yellow-400 text-yellow-600" : "bg-white border-duo-border text-duo-gray")}
+                                          title="黃色螢光筆"
+                                        >
+                                          <Highlighter className="w-5 h-5" />
+                                        </button>
+                                        <button 
+                                          onClick={() => { setPenColor("transparent"); setIsHighlighter(false); }}
+                                          className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
+                                          title="橡皮擦"
+                                        >
+                                          <Eraser className="w-5 h-5" />
+                                        </button>
                                     <div className="w-full h-0.5 bg-duo-border my-1" />
                                     <div className="flex flex-col items-center gap-1 py-1">
                                       <span className="text-[8px] font-black text-duo-gray">粗細</span>
@@ -2617,47 +2660,82 @@ export default function App() {
                             >
                               <div className="p-6 sm:p-12 space-y-10 bg-gradient-to-b from-white to-duo-light/30">
                                 {/* Category & Handwriting Control */}
-                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/50 p-4 rounded-2xl border-2 border-duo-border/50">
-                                  <div className="flex items-center gap-3 w-full sm:w-auto">
-                                    <div className="w-8 h-8 bg-duo-blue/10 rounded-lg flex items-center justify-center">
-                                      <History className="w-4 h-4 text-duo-blue" />
+                                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/50 p-4 rounded-2xl border-2 border-duo-border/50">
+                                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                                      <div className="w-8 h-8 bg-duo-blue/10 rounded-lg flex items-center justify-center">
+                                        <History className="w-4 h-4 text-duo-blue" />
+                                      </div>
+                                      <div className="flex-1 sm:flex-none">
+                                        <input 
+                                          type="text"
+                                          placeholder="設定分類 (例如: 形容詞)"
+                                          className="w-full sm:w-48 bg-transparent text-sm font-bold text-duo-dark focus:outline-none border-b-2 border-duo-border focus:border-duo-blue transition-colors px-1 py-0.5"
+                                          value={item.category || ''}
+                                          onChange={(e) => {
+                                            const newCat = e.target.value;
+                                            setHistory(prev => {
+                                              const newHistory = prev.map(h => h.id === item.id ? { ...h, category: newCat } : h);
+                                              safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+                                              return newHistory;
+                                            });
+                                          }}
+                                        />
+                                      </div>
                                     </div>
-                                    <div className="flex-1 sm:flex-none">
-                                      <input 
-                                        type="text"
-                                        placeholder="設定分類 (例如: 形容詞)"
-                                        className="w-full sm:w-48 bg-transparent text-sm font-bold text-duo-dark focus:outline-none border-b-2 border-duo-border focus:border-duo-blue transition-colors px-1 py-0.5"
-                                        value={item.category || ''}
-                                        onChange={(e) => {
-                                          const newCat = e.target.value;
-                                          setHistory(prev => {
-                                            const newHistory = prev.map(h => h.id === item.id ? { ...h, category: newCat } : h);
-                                            safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
-                                            return newHistory;
-                                          });
+                                    
+                                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                                      <button 
+                                        onClick={() => {
+                                          if (editingId === item.id) {
+                                            setHistory(prev => {
+                                              const newHistory = prev.map(h => h.id === item.id ? { ...h, explanation: editContent } : h);
+                                              safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+                                              return newHistory;
+                                            });
+                                            setEditingId(null);
+                                            setShowToast('內容已儲存');
+                                          } else {
+                                            setEditingId(item.id);
+                                            setEditContent(item.explanation);
+                                          }
                                         }}
-                                      />
+                                        className={cn(
+                                          "flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-black text-sm transition-all border-2",
+                                          editingId === item.id ? "bg-duo-green text-white border-duo-green" : "bg-white text-duo-gray border-duo-border hover:border-duo-blue/30"
+                                        )}
+                                      >
+                                        {editingId === item.id ? <Save className="w-4 h-4" /> : <PenLine className="w-4 h-4" />}
+                                        {editingId === item.id ? "儲存文字" : "編輯文字"}
+                                      </button>
+
+                                      <button 
+                                        onClick={() => restructureWithAI(item)}
+                                        disabled={isRestructuring === item.id}
+                                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-black text-sm bg-white text-duo-blue border-2 border-duo-border hover:border-duo-blue/30 transition-all disabled:opacity-50"
+                                      >
+                                        {isRestructuring === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                        AI 優化格式
+                                      </button>
+
+                                      <button 
+                                        onClick={() => toggleDrawing(item.id)}
+                                        className={cn(
+                                          "flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-black text-sm transition-all shadow-sm border-2",
+                                          activeDrawingId === item.id 
+                                            ? "bg-duo-blue text-white border-duo-blue" 
+                                            : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
+                                        )}
+                                      >
+                                        {activeDrawingId === item.id ? <Save className="w-5 h-5" /> : <Pencil className="w-5 h-5" />}
+                                        {activeDrawingId === item.id ? "儲存筆記" : "手寫筆記"}
+                                      </button>
                                     </div>
                                   </div>
-                                  
-                                  <button 
-                                    onClick={() => toggleDrawing(item.id)}
-                                    className={cn(
-                                      "flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-sm transition-all shadow-sm border-2 w-full sm:w-auto justify-center",
-                                      activeDrawingId === item.id 
-                                        ? "bg-duo-blue text-white border-duo-blue" 
-                                        : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
-                                    )}
-                                  >
-                                    {activeDrawingId === item.id ? <Save className="w-5 h-5" /> : <Pencil className="w-5 h-5" />}
-                                    {activeDrawingId === item.id ? "儲存筆記" : "手寫筆記"}
-                                  </button>
-                                </div>
 
                                 <div className="relative min-h-[400px]">
                                   {/* Drawing Toolbar */}
                                   {activeDrawingId === item.id && (
-                                    <div className="absolute top-0 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
+                                    <div className="sticky top-4 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl self-end">
                                       <button 
                                         onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
                                         className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
@@ -2675,9 +2753,9 @@ export default function App() {
                                       />
                                       <div className="w-full h-0.5 bg-duo-border my-1" />
                                       <button 
-                                        onClick={() => { setIsHighlighter(!isHighlighter); if (penColor === 'transparent') setPenColor('#1cb0f6'); }}
-                                        className={cn("p-2 rounded-xl transition-all border-2", isHighlighter ? "bg-yellow-100 border-yellow-400 text-yellow-600" : "bg-white border-duo-border text-duo-gray")}
-                                        title="螢光筆"
+                                        onClick={() => { setPenColor("#ffeb3b"); setIsHighlighter(true); }}
+                                        className={cn("p-2 rounded-xl transition-all border-2", isHighlighter && penColor === "#ffeb3b" ? "bg-yellow-100 border-yellow-400 text-yellow-600" : "bg-white border-duo-border text-duo-gray")}
+                                        title="黃色螢光筆"
                                       >
                                         <Highlighter className="w-5 h-5" />
                                       </button>
@@ -2729,51 +2807,107 @@ export default function App() {
                                     ref={el => { unitRefs.current[item.id] = el; }} 
                                     className="markdown-body relative z-10"
                                   >
-                                    {/* Original Text Section */}
-                                    {item.lessonText && (
-                                      <div className="bg-white rounded-[32px] p-8 border-2 border-duo-border relative group shadow-sm hover:shadow-md transition-shadow mb-10">
-                                        <div className="flex items-center justify-between mb-6">
-                                          <h4 className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] flex items-center gap-2.5">
-                                            <div className="w-2 h-2 bg-duo-blue rounded-full animate-pulse" />
-                                            課文原文
-                                          </h4>
+                                    {editingId === item.id ? (
+                                      <div className="bg-white rounded-[32px] p-8 border-2 border-duo-border shadow-sm">
+                                        <textarea
+                                          className="w-full h-[600px] p-4 text-duo-dark font-mono text-sm bg-duo-light/30 rounded-2xl border-2 border-duo-border focus:border-duo-blue focus:outline-none transition-colors resize-none"
+                                          value={editContent}
+                                          onChange={(e) => setEditContent(e.target.value)}
+                                          placeholder="在此編輯 Markdown 內容..."
+                                        />
+                                        <div className="mt-4 flex justify-end">
                                           <button 
-                                            onClick={() => speakText(item.lessonText, true)}
-                                            className={cn(
-                                              "p-3 rounded-2xl shadow-sm transition-all hover:scale-110 active:scale-95",
-                                              isSpeaking 
-                                                ? "bg-duo-blue/20 text-duo-blue animate-pulse border-2 border-duo-blue" 
-                                                : "bg-duo-light text-duo-blue hover:bg-duo-blue hover:text-white"
-                                            )}
-                                            title="朗讀課文"
+                                            onClick={() => {
+                                              setHistory(prev => {
+                                                const newHistory = prev.map(h => h.id === item.id ? { ...h, explanation: editContent } : h);
+                                                safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+                                                return newHistory;
+                                              });
+                                              setEditingId(null);
+                                              setShowToast('內容已儲存');
+                                            }}
+                                            className="flex items-center gap-2 px-6 py-2 bg-duo-green text-white rounded-xl font-black shadow-sm hover:scale-105 transition-all"
                                           >
-                                            <Volume2 className="w-5 h-5" />
+                                            <Save className="w-4 h-4" />
+                                            儲存變更
                                           </button>
                                         </div>
-                                        <p className="text-2xl font-bold text-duo-dark leading-relaxed italic font-display">
-                                          "{item.lessonText}"
-                                        </p>
                                       </div>
-                                    )}
-
-                                    <Markdown
-                                      remarkPlugins={[remarkGfm]}
-                                      components={{
-                                        table: (props) => (
-                                          <div className="w-full overflow-x-auto my-6 border-2 border-duo-border rounded-2xl shadow-sm bg-white no-scrollbar">
-                                            <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                    ) : (
+                                      <>
+                                        {/* Original Text Section */}
+                                        {item.lessonText && (
+                                          <div className="bg-white rounded-[32px] p-8 border-2 border-duo-border relative group shadow-sm hover:shadow-md transition-shadow mb-10">
+                                            <div className="flex items-center justify-between mb-6">
+                                              <h4 className="text-xs font-black text-duo-gray uppercase tracking-[0.2em] flex items-center gap-2.5">
+                                                <div className="w-2 h-2 bg-duo-blue rounded-full animate-pulse" />
+                                                課文原文
+                                              </h4>
+                                              <button 
+                                                onClick={() => speakText(item.lessonText, true)}
+                                                className={cn(
+                                                  "p-3 rounded-2xl shadow-sm transition-all hover:scale-110 active:scale-95",
+                                                  isSpeaking 
+                                                    ? "bg-duo-blue/20 text-duo-blue animate-pulse border-2 border-duo-blue" 
+                                                    : "bg-duo-light text-duo-blue hover:bg-duo-blue hover:text-white"
+                                                )}
+                                                title="朗讀課文"
+                                              >
+                                                <Volume2 className="w-5 h-5" />
+                                              </button>
+                                            </div>
+                                            <p className="text-2xl font-bold text-duo-dark leading-relaxed italic font-display">
+                                              "{item.lessonText}"
+                                            </p>
                                           </div>
-                                        ),
-                                        th: (props) => (
-                                          <th className="p-3 sm:p-5 text-left text-[10px] sm:text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
-                                        ),
-                                        td: (props) => (
-                                          <td className="p-3 sm:p-5 text-xs sm:text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
-                                        )
-                                      }}
-                                    >
-                                      {item.explanation}
-                                    </Markdown>
+                                        )}
+
+                                        <Markdown
+                                          remarkPlugins={[remarkGfm]}
+                                          components={{
+                                            table: (props) => (
+                                              <div className="w-full overflow-x-auto my-6 border-2 border-duo-border rounded-2xl shadow-sm bg-white no-scrollbar">
+                                                <table className="w-full border-collapse min-w-[500px]" {...props} />
+                                              </div>
+                                            ),
+                                            th: (props) => (
+                                              <th className="p-3 sm:p-5 text-left text-[10px] sm:text-xs font-black text-duo-gray uppercase tracking-widest border-b-2 border-duo-border bg-duo-light whitespace-nowrap" {...props} />
+                                            ),
+                                            td: (props) => (
+                                              <td className="p-3 sm:p-5 text-xs sm:text-sm text-duo-dark border-b border-duo-border bg-white break-words font-medium" {...props} />
+                                            )
+                                          }}
+                                        >
+                                          {item.explanation}
+                                        </Markdown>
+
+                                        {/* Vocabulary Section Moved Down */}
+                                        <div className="mt-12 pt-10 border-t-4 border-duo-border/30">
+                                          <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 bg-duo-blue/10 rounded-xl flex items-center justify-center">
+                                              <Volume2 className="w-5 h-5 text-duo-blue" />
+                                            </div>
+                                            <h4 className="font-extrabold text-lg font-display">本課重點單字</h4>
+                                          </div>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            {item.vocabulary.map((v, i) => (
+                                              <button 
+                                                key={i} 
+                                                onClick={() => speakText(v.split('-')[0].trim())}
+                                                className="bg-white p-5 rounded-2xl border-2 border-duo-border shadow-sm flex items-center justify-between group hover:border-duo-blue/30 transition-all text-left"
+                                              >
+                                                <span className="text-lg font-black text-duo-dark group-hover:text-duo-blue transition-colors">
+                                                  {v}
+                                                </span>
+                                                <div className="p-3 bg-duo-blue/5 rounded-xl text-duo-blue group-hover:bg-duo-blue group-hover:text-white transition-all">
+                                                  <Volume2 className="w-5 h-5" />
+                                                </div>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </>
+                                    )}
                                   </div>
 
                                     {activeDrawingId === item.id && (
