@@ -219,7 +219,9 @@ export default function App() {
       
       if (activeDrawingId === 'summary' && globalSummary) {
         key = `summary_${globalSummary.timestamp}`;
-      } else if (activeDrawingId !== 'summary') {
+      } else if (activeDrawingId === 'daily' && dailyStory) {
+        key = `daily_${dailyStory.timestamp}`;
+      } else if (activeDrawingId !== 'summary' && activeDrawingId !== 'daily') {
         key = `unit_${activeDrawingId}`;
         // Also update history to persist drawing data
         setHistory(prev => {
@@ -242,7 +244,9 @@ export default function App() {
       let key = '';
       if (activeDrawingId === 'summary' && globalSummary) {
         key = `summary_${globalSummary.timestamp}`;
-      } else if (activeDrawingId !== 'summary') {
+      } else if (activeDrawingId === 'daily' && dailyStory) {
+        key = `daily_${dailyStory.timestamp}`;
+      } else if (activeDrawingId !== 'summary' && activeDrawingId !== 'daily') {
         key = `unit_${activeDrawingId}`;
       }
       
@@ -280,9 +284,16 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    // Height calculation is now handled in toggleDrawing and ResizeObserver
-  }, [globalSummary, currentAnalysis, activeTab]);
+  const [summaryHistory, setSummaryHistory] = useState<GlobalSummaryData[]>(() => {
+    const saved = localStorage.getItem('duo_summary_history_v1');
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return [];
+    }
+  });
+
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [dailyStory, setDailyStory] = useState<DailyStory | null>(() => {
@@ -299,15 +310,23 @@ export default function App() {
   const [dailyFeedback, setDailyFeedback] = useState<{ [key: number]: string }>({});
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
   const [isWorksheetExpanded, setIsWorksheetExpanded] = useState(true);
-  const [summaryHistory, setSummaryHistory] = useState<GlobalSummaryData[]>(() => {
-    const saved = localStorage.getItem('duo_summary_history_v1');
-    if (!saved) return [];
-    try {
-      return JSON.parse(saved);
-    } catch (e) {
-      return [];
-    }
-  });
+
+  useEffect(() => {
+    const targetId = activeDrawingId;
+    if (!targetId) return;
+
+    const element = targetId === 'summary' ? unitRefs.current['summary'] : unitRefs.current[targetId];
+    if (!element) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setCanvasHeight(entry.target.scrollHeight + 100);
+      }
+    });
+
+    resizeObserver.observe(element);
+    return () => resizeObserver.disconnect();
+  }, [activeDrawingId, globalSummary, dailyStory, currentAnalysis]);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
   const [worksheetAnswers, setWorksheetAnswers] = useState<string[]>([]);
@@ -1928,10 +1947,13 @@ export default function App() {
                             className="overflow-hidden"
                           >
                             <div className="p-4 sm:p-8 pt-0 border-t-2 border-duo-border/30">
-                              <div className="relative mt-6 min-h-[400px]">
+                              <div className={cn(
+                                "relative mt-6 min-h-[400px]",
+                                activeDrawingId === 'summary' && "fixed inset-0 z-[100] bg-duo-light p-4 sm:p-10 overflow-auto"
+                              )}>
                                 {/* Drawing Toolbar */}
                                   {activeDrawingId === 'summary' && (
-                                      <div className="sticky top-4 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl self-end">
+                                      <div className="fixed top-4 right-4 sm:top-10 sm:right-10 z-[110] flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
                                         <button 
                                           onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
                                           className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
@@ -1989,6 +2011,14 @@ export default function App() {
                                     >
                                       <Trash2 className="w-5 h-5" />
                                     </button>
+                                    <div className="w-full h-0.5 bg-duo-border my-1" />
+                                    <button 
+                                      onClick={() => toggleDrawing('summary')}
+                                      className="p-2 bg-duo-green text-white rounded-xl shadow-lg hover:scale-110 transition-all"
+                                      title="儲存並關閉"
+                                    >
+                                      <Save className="w-5 h-5" />
+                                    </button>
                                   </div>
                                 )}
 
@@ -2021,7 +2051,7 @@ export default function App() {
                                 </div>
 
                                 {activeDrawingId === 'summary' && (
-                                  <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
+                                  <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto" style={{ height: canvasHeight, background: 'transparent' }}>
                                     <HandwritingCanvas
                                       ref={canvasRef}
                                       color={penColor}
@@ -2410,6 +2440,18 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-3">
                       <button 
+                        onClick={() => toggleDrawing('daily')}
+                        className={cn(
+                          "flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all shadow-sm border-2",
+                          activeDrawingId === 'daily' 
+                            ? "bg-duo-blue text-white border-duo-blue" 
+                            : "bg-white text-duo-blue border-duo-border hover:border-duo-blue/30"
+                        )}
+                      >
+                        {activeDrawingId === 'daily' ? <Save className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                        {activeDrawingId === 'daily' ? "儲存筆記" : "手寫筆記"}
+                      </button>
+                      <button 
                         onClick={() => setIsSlowMode(!isSlowMode)}
                         className={cn(
                           "px-4 py-2 rounded-xl transition-all duration-300 flex items-center gap-2 border-2",
@@ -2439,9 +2481,99 @@ export default function App() {
                       <p className="text-duo-gray font-bold animate-pulse">正在為你編寫專屬短文...</p>
                     </div>
                   ) : dailyStory ? (
-                    <div className="space-y-12">
-                      {/* Story Section */}
-                      <div className="bg-duo-light/30 rounded-[32px] border-2 border-duo-border p-8 sm:p-10">
+                    <div 
+                      ref={el => { unitRefs.current['daily'] = el; }}
+                      className={cn(
+                        "space-y-12 relative",
+                        activeDrawingId === 'daily' && "fixed inset-0 z-[100] bg-duo-light p-4 sm:p-10 overflow-auto"
+                      )}
+                    >
+                      {activeDrawingId === 'daily' && (
+                        <div className="flex items-center justify-between mb-6 bg-white p-4 rounded-2xl border-2 border-duo-border shadow-sm">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-duo-blue rounded-xl flex items-center justify-center">
+                              <Pencil className="text-white w-5 h-5" />
+                            </div>
+                            <h3 className="text-xl font-black text-duo-dark font-display">筆記模式：{dailyStory.title}</h3>
+                          </div>
+                          <button 
+                            onClick={() => toggleDrawing('daily')}
+                            className="duo-button-primary px-6 py-2 text-sm"
+                          >
+                            完成並儲存
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="relative">
+                        {/* Drawing Toolbar for Daily Story */}
+                        {activeDrawingId === 'daily' && (
+                          <div className="fixed top-24 right-10 z-[110] flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
+                            <button 
+                              onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
+                              className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                              style={{ backgroundColor: "#1cb0f6" }}
+                            />
+                            <button 
+                              onClick={() => { setPenColor("#ff4b4b"); setIsHighlighter(false); }}
+                              className={cn("w-8 h-8 rounded-full border-2", penColor === "#ff4b4b" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                              style={{ backgroundColor: "#ff4b4b" }}
+                            />
+                            <button 
+                              onClick={() => { setPenColor("#58cc02"); setIsHighlighter(false); }}
+                              className={cn("w-8 h-8 rounded-full border-2", penColor === "#58cc02" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
+                              style={{ backgroundColor: "#58cc02" }}
+                            />
+                            <div className="w-full h-0.5 bg-duo-border my-1" />
+                            <button 
+                              onClick={() => { setPenColor("#ffeb3b"); setIsHighlighter(true); }}
+                              className={cn("p-2 rounded-xl transition-all border-2", isHighlighter && penColor === "#ffeb3b" ? "bg-yellow-100 border-yellow-400 text-yellow-600" : "bg-white border-duo-border text-duo-gray")}
+                              title="黃色螢光筆"
+                            >
+                              <Highlighter className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => { setPenColor("transparent"); setIsHighlighter(false); }}
+                              className={cn("p-2 rounded-xl transition-all border-2", penColor === "transparent" ? "bg-duo-blue/10 border-duo-blue text-duo-blue" : "bg-white border-duo-border text-duo-gray")}
+                              title="橡皮擦"
+                            >
+                              <Eraser className="w-5 h-5" />
+                            </button>
+                            <div className="w-full h-0.5 bg-duo-border my-1" />
+                            <div className="flex flex-col items-center gap-1 py-1">
+                              <span className="text-[8px] font-black text-duo-gray">粗細</span>
+                              <input 
+                                type="range" 
+                                min="1" 
+                                max="10" 
+                                value={brushRadius} 
+                                onChange={(e) => setBrushRadius(parseInt(e.target.value))}
+                                className="w-12 h-1 bg-duo-border rounded-lg appearance-none cursor-pointer accent-duo-blue"
+                              />
+                            </div>
+                            <div className="w-full h-0.5 bg-duo-border my-1" />
+                            <button 
+                              onClick={() => canvasRef.current?.undo()}
+                              className="p-2 hover:bg-duo-light rounded-xl text-duo-gray transition-all"
+                              title="復原"
+                            >
+                              <History className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => canvasRef.current?.clear()}
+                              className="p-2 hover:bg-duo-red/10 text-duo-red rounded-xl transition-all"
+                              title="清除全部"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </div>
+                        )}
+
+                        <div 
+                          className="space-y-12 relative z-10"
+                        >
+                          {/* Story Section */}
+                          <div className="bg-duo-light/30 rounded-[32px] border-2 border-duo-border p-8 sm:p-10">
                         <div className="flex items-center justify-between mb-6">
                           <h3 className="text-2xl font-black text-duo-dark font-display">{dailyStory.title}</h3>
                           <button 
@@ -2545,9 +2677,25 @@ export default function App() {
                             </div>
                           ))}
                         </div>
+
+                        {activeDrawingId === 'daily' && (
+                          <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto" style={{ height: canvasHeight, background: 'transparent' }}>
+                            <HandwritingCanvas
+                              ref={canvasRef}
+                              color={penColor}
+                              radius={brushRadius}
+                              isHighlighter={isHighlighter}
+                              width="100%"
+                              height={canvasHeight}
+                              className="handwriting-canvas"
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ) : (
+                  </div>
+                </div>
+              ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
                       <div className="w-20 h-20 bg-duo-light rounded-full flex items-center justify-center mb-6">
                         <PenLine className="w-10 h-10 text-duo-border" />
@@ -2658,7 +2806,10 @@ export default function App() {
                               transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
                               className="border-t-2 border-duo-border/30"
                             >
-                              <div className="p-6 sm:p-12 space-y-10 bg-gradient-to-b from-white to-duo-light/30">
+                              <div className={cn(
+                                "p-6 sm:p-12 space-y-10 bg-gradient-to-b from-white to-duo-light/30 relative",
+                                activeDrawingId === item.id && "fixed inset-0 z-[100] bg-duo-light p-4 sm:p-10 overflow-auto"
+                              )}>
                                 {/* Category & Handwriting Control */}
                                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/50 p-4 rounded-2xl border-2 border-duo-border/50">
                                     <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -2732,10 +2883,13 @@ export default function App() {
                                     </div>
                                   </div>
 
-                                <div className="relative min-h-[400px]">
+                                <div className={cn(
+                                  "relative min-h-[400px]",
+                                  activeDrawingId === item.id && "fixed inset-0 z-[100] bg-duo-light p-4 sm:p-10 overflow-auto"
+                                )}>
                                   {/* Drawing Toolbar */}
                                   {activeDrawingId === item.id && (
-                                    <div className="sticky top-4 right-0 z-30 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl self-end">
+                                    <div className="fixed top-4 right-4 sm:top-10 sm:right-10 z-[110] flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-md rounded-2xl border-2 border-duo-border shadow-xl">
                                       <button 
                                         onClick={() => { setPenColor("#1cb0f6"); setIsHighlighter(false); }}
                                         className={cn("w-8 h-8 rounded-full border-2", penColor === "#1cb0f6" && !isHighlighter ? "border-duo-dark scale-110" : "border-transparent")}
@@ -2792,6 +2946,14 @@ export default function App() {
                                         title="清除全部"
                                       >
                                         <Trash2 className="w-5 h-5" />
+                                      </button>
+                                      <div className="w-full h-0.5 bg-duo-border my-1" />
+                                      <button 
+                                        onClick={() => toggleDrawing(item.id)}
+                                        className="p-2 bg-duo-green text-white rounded-xl shadow-lg hover:scale-110 transition-all"
+                                        title="儲存並關閉"
+                                      >
+                                        <Save className="w-5 h-5" />
                                       </button>
                                     </div>
                                   )}
@@ -2961,7 +3123,7 @@ export default function App() {
                                   </div>
 
                                     {activeDrawingId === item.id && (
-                                      <div className="absolute inset-0 z-20 pointer-events-auto" style={{ background: 'transparent' }}>
+                                      <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto" style={{ height: canvasHeight, background: 'transparent' }}>
                                         <HandwritingCanvas
                                           ref={canvasRef}
                                           color={penColor}
