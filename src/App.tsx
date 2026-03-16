@@ -2890,20 +2890,70 @@ export default function App() {
                                             <h4 className="font-extrabold text-lg font-display">本課重點單字</h4>
                                           </div>
                                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            {item.vocabulary.map((v, i) => (
-                                              <button 
-                                                key={i} 
-                                                onClick={() => speakText(v.split('-')[0].trim())}
-                                                className="bg-white p-5 rounded-2xl border-2 border-duo-border shadow-sm flex items-center justify-between group hover:border-duo-blue/30 transition-all text-left"
-                                              >
-                                                <span className="text-lg font-black text-duo-dark group-hover:text-duo-blue transition-colors">
-                                                  {v}
-                                                </span>
-                                                <div className="p-3 bg-duo-blue/5 rounded-xl text-duo-blue group-hover:bg-duo-blue group-hover:text-white transition-all">
-                                                  <Volume2 className="w-5 h-5" />
+                                            {item.vocabulary.map((v, i) => {
+                                              const parts = v.split('-').map(p => p.trim());
+                                              const word = parts[0] || "";
+                                              const meaning = parts[1] || "";
+                                              const sentence = parts[2] || "";
+                                              
+                                              return (
+                                                <div 
+                                                  key={i} 
+                                                  className="bg-white p-5 rounded-2xl border-2 border-duo-border shadow-sm flex flex-col gap-3 group hover:border-duo-blue/30 transition-all"
+                                                >
+                                                  <div className="flex items-center justify-between">
+                                                    <div className="flex flex-col">
+                                                      <span className="text-xl font-black text-duo-dark group-hover:text-duo-blue transition-colors">
+                                                        {word}
+                                                      </span>
+                                                      <span className="text-sm font-bold text-duo-gray">{meaning}</span>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                      <button 
+                                                        onClick={() => speakText(word, true)}
+                                                        className="p-3 bg-duo-blue/10 rounded-xl text-duo-blue hover:bg-duo-blue hover:text-white transition-all shadow-sm flex flex-col items-center gap-1"
+                                                        title="唸單字"
+                                                      >
+                                                        <Volume2 className="w-5 h-5" />
+                                                        <span className="text-[8px] font-black uppercase">Word</span>
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                  
+                                                  {sentence && (
+                                                    <div className="pt-3 border-t border-duo-border/50 flex items-start justify-between gap-3">
+                                                      <p className="text-sm font-medium text-duo-dark italic leading-relaxed flex-1">
+                                                        {sentence}
+                                                      </p>
+                                                      <div className="flex flex-col gap-2">
+                                                        <button 
+                                                          onClick={() => {
+                                                            const frSentence = sentence.split(/[（(]/)[0].trim();
+                                                            speakText(frSentence, true);
+                                                          }}
+                                                          className="p-2 bg-duo-green/10 rounded-lg text-duo-green hover:bg-duo-green hover:text-white transition-all flex-shrink-0 shadow-sm flex flex-col items-center gap-1"
+                                                          title="唸例句"
+                                                        >
+                                                          <Volume2 className="w-4 h-4" />
+                                                          <span className="text-[8px] font-black uppercase">Sent</span>
+                                                        </button>
+                                                        <button 
+                                                          onClick={() => {
+                                                            const frSentence = sentence.split(/[（(]/)[0].trim();
+                                                            speakText(`${word}. ${frSentence}`, true);
+                                                          }}
+                                                          className="p-2 bg-duo-yellow/10 rounded-lg text-duo-yellow hover:bg-duo-yellow hover:text-white transition-all flex-shrink-0 shadow-sm flex flex-col items-center gap-1"
+                                                          title="唸全部"
+                                                        >
+                                                          <Volume2 className="w-4 h-4" />
+                                                          <span className="text-[8px] font-black uppercase">Both</span>
+                                                        </button>
+                                                      </div>
+                                                    </div>
+                                                  )}
                                                 </div>
-                                              </button>
-                                            ))}
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       </>

@@ -96,9 +96,9 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
       ctx.globalAlpha = 1.0;
       ctx.strokeStyle = '#ffffff';
     } else if (isHighlighter) {
-      ctx.globalCompositeOperation = 'multiply'; // Better for highlighters to not obscure text
-      ctx.globalAlpha = 0.5;
-      ctx.strokeStyle = color === '#ffeb3b' ? 'rgba(255, 235, 59, 0.5)' : color;
+      ctx.globalCompositeOperation = 'source-over'; 
+      ctx.globalAlpha = 0.4; // Lower alpha for better transparency
+      ctx.strokeStyle = color;
       ctx.lineWidth = radius * 8;
     } else {
       ctx.globalCompositeOperation = 'source-over';
