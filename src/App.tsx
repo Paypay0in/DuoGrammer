@@ -121,7 +121,7 @@ export default function App() {
       
       setHistory(prev => {
         const newHistory = prev.map(h => h.id === item.id ? { ...h, explanation: newContent } : h);
-        safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+        safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 200)));
         return newHistory;
       });
       setShowToast('筆記格式已優化！');
@@ -233,15 +233,37 @@ export default function App() {
 
       if (error && error.code !== 'PGRST116') throw error;
       if (data) {
+        // Merge History: Combine local and remote, keeping unique IDs
+        // If IDs conflict, keep the one with the newer timestamp
         if (data.history) {
-          setHistory(data.history);
-          safeLocalStorageSet('duo_grammar_history', JSON.stringify(data.history));
+          setHistory(prev => {
+            const mergedMap = new Map<string, AnalysisResult>();
+            // Add existing local items
+            prev.forEach(item => mergedMap.set(item.id, item));
+            // Add remote items, overwriting only if remote is newer or local doesn't have it
+            data.history.forEach((remoteItem: AnalysisResult) => {
+              const localItem = mergedMap.get(remoteItem.id);
+              if (!localItem || remoteItem.timestamp > localItem.timestamp) {
+                mergedMap.set(remoteItem.id, remoteItem);
+              }
+            });
+            const merged = Array.from(mergedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+            safeLocalStorageSet('duo_grammar_history', JSON.stringify(merged.slice(0, 200)));
+            return merged;
+          });
         }
+
+        // Merge Summary: Keep the one with the later timestamp
         if (data.summary) {
-          setGlobalSummary(data.summary);
-          localStorage.setItem('duo_grammar_summary_v2', JSON.stringify(data.summary));
+          setGlobalSummary(prev => {
+            if (!prev || data.summary.timestamp > prev.timestamp) {
+              localStorage.setItem('duo_grammar_summary_v2', JSON.stringify(data.summary));
+              return data.summary;
+            }
+            return prev;
+          });
         }
-        setShowToast('已從雲端載入最新資料');
+        setShowToast('雲端資料已同步並合併！');
       } else {
         setShowToast('雲端尚無資料');
       }
@@ -256,7 +278,7 @@ export default function App() {
   const updateUnitLocation = (id: string, location: string) => {
     setHistory(prev => {
       const newHistory = prev.map(item => item.id === id ? { ...item, duoLocation: location } : item);
-      safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+      safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 200)));
       return newHistory;
     });
     if (currentAnalysis?.id === id) {
@@ -314,7 +336,7 @@ export default function App() {
         // Also update history to persist drawing data
         setHistory(prev => {
           const newHistory = prev.map(item => item.id === activeDrawingId ? { ...item, drawingData: data } : item);
-          safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+          safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 200)));
           return newHistory;
         });
       }
@@ -456,15 +478,34 @@ export default function App() {
           .eq('id', user.id)
           .single();
 
-        if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows found"
+        if (error && error.code !== 'PGRST116') throw error;
         
         if (data) {
-          // If local is empty, load from cloud
-          if (history.length === 0 && data.history) {
-            setHistory(data.history);
+          // Merge History on mount
+          if (data.history) {
+            setHistory(prev => {
+              const mergedMap = new Map<string, AnalysisResult>();
+              prev.forEach(item => mergedMap.set(item.id, item));
+              data.history.forEach((remoteItem: AnalysisResult) => {
+                const localItem = mergedMap.get(remoteItem.id);
+                if (!localItem || remoteItem.timestamp > localItem.timestamp) {
+                  mergedMap.set(remoteItem.id, remoteItem);
+                }
+              });
+              const merged = Array.from(mergedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+              safeLocalStorageSet('duo_grammar_history', JSON.stringify(merged.slice(0, 200)));
+              return merged;
+            });
           }
-          if (!globalSummary && data.summary) {
-            setGlobalSummary(data.summary);
+          // Merge Summary on mount
+          if (data.summary) {
+            setGlobalSummary(prev => {
+              if (!prev || data.summary.timestamp > prev.timestamp) {
+                localStorage.setItem('duo_grammar_summary_v2', JSON.stringify(data.summary));
+                return data.summary;
+              }
+              return prev;
+            });
           }
         }
       } catch (error) {
@@ -563,7 +604,7 @@ export default function App() {
 
   // Persistence
   useEffect(() => {
-    safeLocalStorageSet('duo_grammar_history', JSON.stringify(history.slice(0, 20)));
+    safeLocalStorageSet('duo_grammar_history', JSON.stringify(history.slice(0, 200)));
   }, [history]);
 
   useEffect(() => {
@@ -579,11 +620,11 @@ export default function App() {
   }, [globalSummary]);
 
   useEffect(() => {
-    safeLocalStorageSet('duo_worksheet_history', JSON.stringify(worksheetHistory.slice(0, 20)));
+    safeLocalStorageSet('duo_worksheet_history', JSON.stringify(worksheetHistory.slice(0, 200)));
   }, [worksheetHistory]);
 
   useEffect(() => {
-    safeLocalStorageSet('duo_summary_history_v1', JSON.stringify(summaryHistory.slice(0, 10)));
+    safeLocalStorageSet('duo_summary_history_v1', JSON.stringify(summaryHistory.slice(0, 50)));
   }, [summaryHistory]);
 
   const scrollToBottom = () => {
@@ -1079,7 +1120,7 @@ export default function App() {
         timestamp: Date.now(),
         score: data.score,
         feedback: data.feedback
-      }, ...prev].slice(0, 10)); // Keep last 10
+      }, ...prev].slice(0, 50)); // Keep last 50
       
     } catch (error) {
       console.error("Grading failed:", error);
@@ -2005,7 +2046,7 @@ export default function App() {
                       onClick={() => {
                         if (globalSummary) {
                           safeLocalStorageSet('duo_grammar_summary_v2', JSON.stringify(globalSummary));
-                          safeLocalStorageSet('duo_summary_history_v1', JSON.stringify(summaryHistory.slice(0, 10)));
+                          safeLocalStorageSet('duo_summary_history_v1', JSON.stringify(summaryHistory.slice(0, 50)));
                           setShowToast("總結筆記已成功儲存！");
                         }
                       }}
@@ -2168,7 +2209,7 @@ export default function App() {
                                 </div>
 
                                 {activeDrawingId === 'summary' && (
-                                  <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto" style={{ height: canvasHeight, background: 'transparent' }}>
+                                  <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto select-none" style={{ height: canvasHeight, background: 'transparent' }}>
                                     <HandwritingCanvas
                                       ref={canvasRef}
                                       color={penColor}
@@ -2796,7 +2837,7 @@ export default function App() {
                         </div>
 
                         {activeDrawingId === 'daily' && (
-                          <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto" style={{ height: canvasHeight, background: 'transparent' }}>
+                          <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto select-none" style={{ height: canvasHeight, background: 'transparent' }}>
                             <HandwritingCanvas
                               ref={canvasRef}
                               color={penColor}
@@ -2943,7 +2984,7 @@ export default function App() {
                                             const newCat = e.target.value;
                                             setHistory(prev => {
                                               const newHistory = prev.map(h => h.id === item.id ? { ...h, category: newCat } : h);
-                                              safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+                                              safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 200)));
                                               return newHistory;
                                             });
                                           }}
@@ -2957,7 +2998,7 @@ export default function App() {
                                           if (editingId === item.id) {
                                             setHistory(prev => {
                                               const newHistory = prev.map(h => h.id === item.id ? { ...h, explanation: editContent } : h);
-                                              safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+                                              safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 200)));
                                               return newHistory;
                                             });
                                             setEditingId(null);
@@ -3099,7 +3140,7 @@ export default function App() {
                                             onClick={() => {
                                               setHistory(prev => {
                                                 const newHistory = prev.map(h => h.id === item.id ? { ...h, explanation: editContent } : h);
-                                                safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 20)));
+                                                safeLocalStorageSet('duo_grammar_history', JSON.stringify(newHistory.slice(0, 200)));
                                                 return newHistory;
                                               });
                                               setEditingId(null);
@@ -3240,7 +3281,7 @@ export default function App() {
                                   </div>
 
                                     {activeDrawingId === item.id && (
-                                      <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto" style={{ height: canvasHeight, background: 'transparent' }}>
+                                      <div className="absolute top-0 left-0 w-full z-20 pointer-events-auto select-none" style={{ height: canvasHeight, background: 'transparent' }}>
                                         <HandwritingCanvas
                                           ref={canvasRef}
                                           color={penColor}
@@ -3503,7 +3544,7 @@ export default function App() {
                         </button>
                         <button 
                           onClick={() => {
-                            safeLocalStorageSet('duo_grammar_history', JSON.stringify(history.slice(0, 20)));
+                            safeLocalStorageSet('duo_grammar_history', JSON.stringify(history.slice(0, 200)));
                             setShowToast("學習紀錄已成功儲存！");
                           }}
                           className="text-[10px] font-black text-duo-green hover:underline flex items-center gap-1.5 uppercase tracking-widest"
