@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw, PenLine, Pencil, Eraser, Highlighter } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, BookOpen, History, Trash2, Save, ChevronRight, ChevronDown, ChevronUp, Sparkles, Mic, MicOff, Volume2, VolumeX, Search, X, ClipboardCheck, CheckCircle2, AlertCircle, RefreshCw, PenLine, Pencil, Eraser, Highlighter, LogIn, LogOut, User, CloudDownload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -133,20 +133,73 @@ export default function App() {
     }
   };
 
+  const [user, setUser] = useState<any>(null);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+
+  // Auth Listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthLoading(true);
+    try {
+      if (authMode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+        setShowToast('登入成功！');
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+        setShowToast('註冊成功！請檢查電子郵件驗證信');
+      }
+      setShowAuthModal(false);
+    } catch (error: any) {
+      console.error('Auth error:', error);
+      setShowToast(error.message || '認證失敗');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setShowToast('已登出');
+  };
+
   const syncToCloud = async () => {
-    if (history.length === 0 && !globalSummary) {
-      setShowToast('沒有資料可以同步');
+    if (!user) {
+      setShowAuthModal(true);
+      setShowToast('請先登入以同步資料');
       return;
     }
     
     setIsManualSyncing(true);
     setSyncStatus('syncing');
     try {
-      const userId = 'default_user';
       const { error } = await supabase
         .from('duo_grammar_data')
         .upsert({ 
-          id: userId, 
+          id: user.id, 
           history: history,
           summary: globalSummary,
           updated_at: new Date().toISOString()
@@ -160,6 +213,41 @@ export default function App() {
       console.error('Manual sync error:', error);
       setSyncStatus('error');
       setShowToast('同步失敗，請檢查網路');
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
+
+  const pullFromCloud = async () => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    setIsManualSyncing(true);
+    try {
+      const { data, error } = await supabase
+        .from('duo_grammar_data')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      if (data) {
+        if (data.history) {
+          setHistory(data.history);
+          safeLocalStorageSet('duo_grammar_history', JSON.stringify(data.history));
+        }
+        if (data.summary) {
+          setGlobalSummary(data.summary);
+          localStorage.setItem('duo_grammar_summary_v2', JSON.stringify(data.summary));
+        }
+        setShowToast('已從雲端載入最新資料');
+      } else {
+        setShowToast('雲端尚無資料');
+      }
+    } catch (error) {
+      console.error('Pull error:', error);
+      setShowToast('載入失敗');
     } finally {
       setIsManualSyncing(false);
     }
@@ -357,24 +445,25 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  // Load from Supabase on mount
+  // Load from Supabase on mount or user change
   useEffect(() => {
     const loadData = async () => {
+      if (!user) return;
       try {
-        const userId = 'default_user';
         const { data, error } = await supabase
           .from('duo_grammar_data')
           .select('*')
-          .eq('id', userId)
+          .eq('id', user.id)
           .single();
 
         if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows found"
         
         if (data) {
-          if (data.history && history.length === 0) {
+          // If local is empty, load from cloud
+          if (history.length === 0 && data.history) {
             setHistory(data.history);
           }
-          if (data.summary && !globalSummary) {
+          if (!globalSummary && data.summary) {
             setGlobalSummary(data.summary);
           }
         }
@@ -383,23 +472,20 @@ export default function App() {
       }
     };
     loadData();
-  }, []);
+  }, [user]);
 
   // Sync to Supabase
   useEffect(() => {
     const syncData = async () => {
+      if (!user) return;
       if (history.length === 0 && !globalSummary) return;
       
       setSyncStatus('syncing');
       try {
-        // Since we don't have auth yet, we use a generic 'default_user'
-        // In a real app, you'd use supabase.auth.user().id
-        const userId = 'default_user';
-        
         const { error: historyError } = await supabase
           .from('duo_grammar_data')
           .upsert({ 
-            id: userId, 
+            id: user.id, 
             history: history,
             summary: globalSummary,
             updated_at: new Date().toISOString()
@@ -414,9 +500,9 @@ export default function App() {
       }
     };
 
-    const timeoutId = setTimeout(syncData, 2000); // Debounce sync
+    const timeoutId = setTimeout(syncData, 5000); // Debounce sync
     return () => clearTimeout(timeoutId);
-  }, [history, globalSummary]);
+  }, [history, globalSummary, user]);
 
   const safeLocalStorageSet = (key: string, value: string) => {
     try {
@@ -1602,17 +1688,48 @@ export default function App() {
                 </button>
               </div>
             <div className="flex items-center gap-2">
-              <button 
-                onClick={syncToCloud}
-                disabled={isManualSyncing}
-                className={cn(
-                  "p-3 rounded-2xl transition-all relative group",
-                  syncStatus === 'error' ? "bg-duo-red/10 text-duo-red" : "hover:bg-duo-light text-duo-gray"
-                )}
-                title="同步至雲端"
-              >
-                <RefreshCw className={cn("w-6 h-6 group-hover:text-duo-blue transition-colors", isManualSyncing && "animate-spin text-duo-blue")} />
-              </button>
+              {user ? (
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <div className="hidden lg:flex flex-col items-end mr-2">
+                    <span className="text-[8px] font-black text-duo-gray uppercase tracking-wider">已登入</span>
+                    <span className="text-[10px] font-bold text-duo-dark truncate max-w-[100px]">{user.email}</span>
+                  </div>
+                  <button 
+                    onClick={syncToCloud}
+                    disabled={isManualSyncing}
+                    className={cn(
+                      "p-2.5 rounded-xl transition-all relative group",
+                      syncStatus === 'error' ? "bg-duo-red/10 text-duo-red" : "hover:bg-duo-light text-duo-gray"
+                    )}
+                    title="同步至雲端"
+                  >
+                    <RefreshCw className={cn("w-5 h-5 group-hover:text-duo-blue transition-colors", isManualSyncing && "animate-spin text-duo-blue")} />
+                  </button>
+                  <button 
+                    onClick={pullFromCloud}
+                    disabled={isManualSyncing}
+                    className="p-2.5 hover:bg-duo-light rounded-xl transition-all text-duo-gray hover:text-duo-blue"
+                    title="從雲端載入"
+                  >
+                    <CloudDownload className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={handleLogout}
+                    className="p-2.5 hover:bg-duo-red/10 rounded-xl transition-all text-duo-gray hover:text-duo-red"
+                    title="登出"
+                  >
+                    <LogOut className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-duo-border text-duo-blue rounded-xl text-xs font-black hover:bg-duo-light transition-all shadow-sm"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span className="hidden sm:inline">登入同步</span>
+                </button>
+              )}
               <button 
                 onClick={() => setShowHistory(!showHistory)}
                 className="p-3 hover:bg-duo-light rounded-2xl transition-all relative group"
@@ -3517,6 +3634,80 @@ export default function App() {
           <span className="text-lg">上傳截圖</span>
         </button>
       </footer>
+      {/* Auth Modal */}
+      <AnimatePresence>
+        {showAuthModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAuthModal(false)}
+              className="absolute inset-0 bg-duo-dark/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[32px] border-4 border-duo-border shadow-2xl overflow-hidden"
+            >
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-black text-duo-blue font-display">
+                    {authMode === 'login' ? '歡迎回來' : '建立帳號'}
+                  </h2>
+                  <button onClick={() => setShowAuthModal(false)} className="p-2 text-duo-gray hover:bg-duo-light rounded-xl">
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+                
+                <form onSubmit={handleAuth} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-black text-duo-gray uppercase tracking-widest mb-2">電子郵件</label>
+                    <input 
+                      type="email" 
+                      required
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-duo-light border-2 border-duo-border rounded-2xl font-bold focus:outline-none focus:border-duo-blue transition-colors"
+                      placeholder="your@email.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black text-duo-gray uppercase tracking-widest mb-2">密碼</label>
+                    <input 
+                      type="password" 
+                      required
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-duo-light border-2 border-duo-border rounded-2xl font-bold focus:outline-none focus:border-duo-blue transition-colors"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                  
+                  <button 
+                    type="submit"
+                    disabled={isAuthLoading}
+                    className="w-full py-4 bg-duo-blue text-white rounded-2xl font-black shadow-lg shadow-duo-blue/25 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                  >
+                    {isAuthLoading ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : (authMode === 'login' ? '登入' : '註冊')}
+                  </button>
+                </form>
+                
+                <div className="mt-6 text-center">
+                  <button 
+                    onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                    className="text-sm font-bold text-duo-gray hover:text-duo-blue transition-colors"
+                  >
+                    {authMode === 'login' ? '還沒有帳號？點此註冊' : '已有帳號？點此登入'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Toast Notification */}
       <AnimatePresence>
         {showToast && (
